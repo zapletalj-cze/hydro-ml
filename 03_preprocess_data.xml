@@ -52,13 +52,23 @@
        continueOnFail=true prevents failure for recent scenes
        where only Restituted orbits are available.
        ======================================================== -->
+  <!-- ========================================================
+       NODE 2: Apply Orbit File
+       Precise orbits available ~20 days after acquisition.
+       Using Restituted orbits as primary to avoid download
+       timeout issues - accuracy difference negligible for
+       terrain correction of GRD data (~1-2m geolocation error).
+       Switch to 'Sentinel Precise (Auto Download)' for scenes
+       older than 20 days.
+       continueOnFail=true prevents hard failure on timeout.
+       ======================================================== -->
   <node id="Apply-Orbit-File">
     <operator>Apply-Orbit-File</operator>
     <sources>
       <sourceProduct refid="Read"/>
     </sources>
     <parameters>
-      <orbitType>Sentinel Precise (Auto Download)</orbitType>
+      <orbitType>Sentinel Restituted (Auto Download)</orbitType>
       <polyDegree>3</polyDegree>
       <continueOnFail>true</continueOnFail>
     </parameters>
@@ -193,7 +203,8 @@
     </sources>
     <parameters>
       <file>${output}</file>
-      <formatName>GeoTIFF</formatName>
+      <!-- BigTIFF handles files larger than 4 GB limit of standard GeoTIFF -->
+      <formatName>GeoTIFF-BigTIFF</formatName>
       <writeEntireTileRows>true</writeEntireTileRows>
     </parameters>
   </node>
