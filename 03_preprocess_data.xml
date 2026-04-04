@@ -203,8 +203,7 @@
     </sources>
     <parameters>
       <file>${output}</file>
-      <!-- BigTIFF handles files larger than 4 GB limit of standard GeoTIFF -->
-      <formatName>GeoTIFF-BigTIFF</formatName>
+\      <formatName>GeoTIFF-BigTIFF</formatName>
       <writeEntireTileRows>true</writeEntireTileRows>
     </parameters>
   </node>
