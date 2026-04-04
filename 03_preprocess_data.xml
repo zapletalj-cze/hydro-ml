@@ -1,0 +1,201 @@
+<graph id="S1_GRD_Preprocessing_LeveeDetection">
+  <!--
+  ============================================================
+  SNAP GPT Preprocessing Graph - Sentinel-1 GRD
+  Purpose:  Levee detection from SAR data
+  Output:   sigma-nought VV + VH in linear units, EPSG:2180
+  Version:  1.1 (April 2026)
+
+  USAGE:
+    Single scene (.zip or .SAFE):
+      gpt S1_preprocessing_levee.xml \
+          -Pinput=/data/raw/S1A_IW_GRDH_*.zip \
+          -Poutput=/data/processed/output_name
+
+    Batch processing (see batch_preprocess.sh):
+      ./batch_preprocess.sh /data/raw/ /data/processed/
+
+  PARAMETERS (overridable from CLI via -P):
+    input   ... path to input .zip or .SAFE
+    output  ... path to output file (no extension)
+
+  NOTES:
+    - Output projection: EPSG:2180 (PL-1992, Polish national system)
+      consistent with BDOT10k ground truth data
+    - Speckle filter intentionally omitted - speckle suppression
+      will be performed by multi-temporal averaging in Python
+    - Output in linear units (not dB) for correct time-series averaging
+    - dB conversion will be applied after multi-temporal averaging in Python
+    - Copernicus DEM 30m used: more accurate than SRTM for Poland
+    - Input format: .zip (SNAP reads directly without unzipping)
+  ============================================================
+  -->
+
+  <version>1.0</version>
+
+  <!-- ========================================================
+       NODE 1: Read input scene
+       Supports both .zip and .SAFE formats directly.
+       ======================================================== -->
+  <node id="Read">
+    <operator>Read</operator>
+    <sources/>
+    <parameters>
+      <file>${input}</file>
+      <formatName>SENTINEL-1</formatName>
+    </parameters>
+  </node>
+
+  <!-- ========================================================
+       NODE 2: Apply Orbit File
+       Downloads precise orbital state vectors (Precise if available,
+       otherwise Restituted). Critical for accurate terrain correction.
+       Precise orbits available approximately 20 days after acquisition.
+       ======================================================== -->
+  <node id="Apply-Orbit-File">
+    <operator>Apply-Orbit-File</operator>
+    <sources>
+      <sourceProduct refid="Read"/>
+    </sources>
+    <parameters>
+      <orbitType>Sentinel Precise (Auto Download)</orbitType>
+      <polyDegree>3</polyDegree>
+      <continueOnFail>true</continueOnFail>
+    </parameters>
+  </node>
+
+  <!-- ========================================================
+       NODE 3: Thermal Noise Removal
+       Removes additive thermal noise, particularly important in
+       the cross-polarisation channel (VH). Necessary for correct
+       VH/VV ratio computation in the feature stack.
+       ======================================================== -->
+  <node id="ThermalNoiseRemoval">
+    <operator>ThermalNoiseRemoval</operator>
+    <sources>
+      <sourceProduct refid="Apply-Orbit-File"/>
+    </sources>
+    <parameters>
+      <selectedPolarisations>VV,VH</selectedPolarisations>
+      <removeThermalNoise>true</removeThermalNoise>
+      <reIntroduceThermalNoise>false</reIntroduceThermalNoise>
+    </parameters>
+  </node>
+
+  <!-- ========================================================
+       NODE 4: Border Noise Removal
+       Removes artefacts at scene edges caused by SAR compression.
+       Standard step with minimal computational cost.
+       ======================================================== -->
+  <node id="Remove-GRD-Border-Noise">
+    <operator>Remove-GRD-Border-Noise</operator>
+    <sources>
+      <sourceProduct refid="ThermalNoiseRemoval"/>
+    </sources>
+    <parameters>
+      <selectedPolarisations>VV,VH</selectedPolarisations>
+      <!-- borderLimit: number of pixels from edge to check -->
+      <borderLimit>500</borderLimit>
+      <trimThreshold>0.5</trimThreshold>
+    </parameters>
+  </node>
+
+  <!-- ========================================================
+       NODE 5: Radiometric Calibration to sigma-nought
+       Converts DN to sigma-nought in linear units.
+       sigma-nought is the correct choice for flat terrain (Poland).
+       gamma-nought would be preferable only for mountainous terrain.
+       Output in LINEAR units - NOT dB!
+       dB conversion will be applied after multi-temporal averaging.
+       ======================================================== -->
+  <node id="Calibration">
+    <operator>Calibration</operator>
+    <sources>
+      <sourceProduct refid="Remove-GRD-Border-Noise"/>
+    </sources>
+    <parameters>
+      <selectedPolarisations>VV,VH</selectedPolarisations>
+      <outputSigmaBand>true</outputSigmaBand>
+      <outputGammaBand>false</outputGammaBand>
+      <outputBetaBand>false</outputBetaBand>
+      <!-- Linear units - dB conversion done later in Python -->
+      <outputImageScaleInDb>false</outputImageScaleInDb>
+    </parameters>
+  </node>
+
+  <!-- ========================================================
+       NODE 6: Range-Doppler Terrain Correction
+       Slowest step. Corrects geometric distortions caused by
+       topography using a Digital Elevation Model.
+
+       Output projection: EPSG:2180 (PL-1992)
+         - Polish national coordinate system, metric
+         - Consistent with BDOT10k ground truth vectors
+         - Covers all of Poland without zone changes (unlike UTM)
+
+       Copernicus DEM 30m:
+         - More accurate than SRTM for Central Europe
+         - No void pixels
+         - Available directly within SNAP
+
+       Pixel spacing 10m: preserves native GRD resolution.
+       ======================================================== -->
+  <node id="Terrain-Correction">
+    <operator>Terrain-Correction</operator>
+    <sources>
+      <sourceProduct refid="Calibration"/>
+    </sources>
+    <parameters>
+      <sourceBands>Sigma0_VV,Sigma0_VH</sourceBands>
+
+      <!-- Copernicus DEM 30m recommended for Poland -->
+      <!-- Alternative: 'SRTM 1Sec HGT' for faster processing -->
+      <demName>Copernicus 30m Global DEM</demName>
+      <demResamplingMethod>BILINEAR_INTERPOLATION</demResamplingMethod>
+      <externalDEMNoDataValue>-32768.0</externalDEMNoDataValue>
+      <imgResamplingMethod>BILINEAR_INTERPOLATION</imgResamplingMethod>
+
+      <!-- Output pixel spacing in metres -->
+      <pixelSpacingInMeter>10.0</pixelSpacingInMeter>
+
+      <!-- EPSG:2180 - PL-1992, consistent with BDOT10k -->
+      <mapProjection>EPSG:2180</mapProjection>
+
+      <!-- Auxiliary layers not needed for levee detection -->
+      <saveDEM>false</saveDEM>
+      <saveLatLon>false</saveLatLon>
+      <saveIncidenceAngleFromEllipsoid>false</saveIncidenceAngleFromEllipsoid>
+      <saveLocalIncidenceAngle>false</saveLocalIncidenceAngle>
+      <saveProjectedLocalIncidenceAngle>false</saveProjectedLocalIncidenceAngle>
+      <saveSelectedSourceBand>true</saveSelectedSourceBand>
+
+      <!-- Mask areas with no valid elevation data -->
+      <nodataValueAtSea>true</nodataValueAtSea>
+      <maskOutAreaWithoutElevation>true</maskOutAreaWithoutElevation>
+      <applyRadiometricNormalization>false</applyRadiometricNormalization>
+    </parameters>
+  </node>
+
+  <!-- ========================================================
+       NODE 7: Write output
+       Format: GeoTIFF - compatible with rasterio, GDAL, QGIS.
+       Output: 2 bands (Sigma0_VV, Sigma0_VH) in linear units,
+       EPSG:2180.
+
+       Output filename preserves original S1 scene name for
+       unambiguous identification in the time series.
+       ======================================================== -->
+  <node id="Write">
+    <operator>Write</operator>
+    <sources>
+      <sourceProduct refid="Terrain-Correction"/>
+    </sources>
+    <parameters>
+      <file>${output}</file>
+      <formatName>GeoTIFF</formatName>
+      <!-- BigTIFF support for scenes larger than 4 GB at 10m resolution -->
+      <writeEntireTileRows>true</writeEntireTileRows>
+    </parameters>
+  </node>
+
+</graph>
