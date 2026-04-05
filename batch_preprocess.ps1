@@ -19,10 +19,10 @@
 # =============================================================================
 
 param(
-    [string]$GptPath    = "C:\Program Files\snap\bin\gpt.exe",
+    [string]$GptPath    = "C:\Program Files\esa-snap\bin\gpt.exe",
     [string]$GraphPath  = "$PSScriptRoot\S1_preprocessing_levee.xml",
-    [string]$RawDir     = "C:\data\raw",
-    [string]$OutputBase = "C:\data\processed",
+    [string]$RawDir     = "D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\sentinel1_data\raw",
+    [string]$OutputBase = "D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\sentinel1_data\processed",
     [int]   $Threads    = 4,
     [ValidateSet("ASC", "DESC", "BOTH")]
     [string]$Orbit      = "BOTH",

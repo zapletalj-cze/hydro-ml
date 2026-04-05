@@ -44,17 +44,17 @@ from functools import partial
 # CONFIGURATION
 # ---------------------------------------------------------------------------
 
-RAW_DIR     = Path("C:/data/raw")
-OUTPUT_BASE = Path("C:/data/processed")
-
+RAW_DIR     = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\sentinel1_data\raw")
+OUTPUT_BASE = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\sentinel1_data\processed")
+EXTERNAL_DEM = r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\COP_DSM\COP_DSM_Poland_4326_c.tif"
 # Processing parameters
 RESOLUTION   = 10                       # output pixel spacing in metres
 T_SRS        = 2180                     # EPSG:2180 - PL-1992, consistent with BDOT10k
 POLARIZATIONS = ["VV", "VH"]
-DEM_NAME     = "Copernicus 30m Global DEM"
+DEM_NAME     = "None"
 SCALING      = "linear"                 # linear units for correct temporal averaging
                                         # dB conversion done later in Python
-N_JOBS       = 8                        # number of parallel scenes
+N_JOBS       = 16                        # number of parallel scenes
 
 # ---------------------------------------------------------------------------
 # LOGGING
@@ -115,6 +115,9 @@ def process_scene(scene_path: Path, output_dir: Path) -> dict:
             demName=DEM_NAME,
             demResamplingMethod="BILINEAR_INTERPOLATION",
             imgResamplingMethod="BILINEAR_INTERPOLATION",
+            externalDEMFile=EXTERNAL_DEM,
+            externalDEMNoDataValue=0,
+            externalDEMApplyEGM=True,
 
             # Preprocessing steps
             removeS1BorderNoise=True,
@@ -140,7 +143,10 @@ def process_scene(scene_path: Path, output_dir: Path) -> dict:
             nodataValueAtSea=True,
 
             # Align pixels across scenes for consistent time series
-            alignToStandardGrid=False,
+            alignToStandardGrid=True,
+            standardGridOriginX=169520,
+            standardGridOriginY=777170,
+
 
             # Cleanup temporary files after processing
             cleanup=True,
@@ -329,7 +335,7 @@ def main():
 
     # Summary
     print(f"\n{'='*55}")
-    print(f"  SUMMARY")
+    print("  SUMMARY")
     print(f"{'='*55}")
     print(f"  Total    : {total_stats['total']}")
     print(f"  Success  : {total_stats['success']}")
