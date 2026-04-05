@@ -127,9 +127,10 @@ def process_scene(scene_path: Path, output_dir: Path) -> dict:
             # Orbit files - allow Restituted as fallback to avoid timeout
             allow_RES_OSV=True,
 
-            # sigma0 (not gamma0) - correct for flat terrain (Polish lowlands)
+            # terrainFlattening=False → sigma0 with ellipsoid correction (elp)
+            # terrainFlattening=True  → gamma0 with radiometric terrain correction (rtc)
+            # sigma0 is correct for flat terrain (Polish lowlands)
             terrainFlattening=False,
-            refarea="sigma0",
 
             # Speckle filter disabled - suppression via multi-temporal averaging
             speckleFilter=False,
