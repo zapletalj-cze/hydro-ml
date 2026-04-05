@@ -37,7 +37,7 @@ import logging
 import argparse
 import traceback
 from pathlib import Path
-from multiprocessing import Pool, cpu_count
+from multiprocessing import Pool
 from functools import partial
 
 # ---------------------------------------------------------------------------
@@ -144,8 +144,8 @@ def process_scene(scene_path: Path, output_dir: Path) -> dict:
 
             # Align pixels across scenes for consistent time series
             alignToStandardGrid=True,
-            standardGridOriginX=169520,
-            standardGridOriginY=777170,
+            standardGridOriginX=169520, # snap to Poland FL MODEL
+            standardGridOriginY=777170, # snap to Poland FL MODEL
 
 
             # Cleanup temporary files after processing
@@ -170,29 +170,25 @@ def process_scene(scene_path: Path, output_dir: Path) -> dict:
 def collect_scenes(input_dir: Path, output_dir: Path) -> list:
     """
     Collects unprocessed .zip scenes from input_dir.
-    Skips scenes already present in output_dir.
+    A scene is considered processed if matching GeoTIFF outputs exist.
     """
     scenes = sorted(input_dir.glob("*.zip"))
     if not scenes:
         log.warning(f"No .zip files found in {input_dir}")
         return []
 
-    # pyroSAR marks processed scenes by creating output files
-    # with a standardised naming convention - check via is_processed
     unprocessed = []
     skipped = 0
 
     for scene in scenes:
-        try:
-            from pyroSAR import identify
-            id_obj = identify(str(scene))
-            if id_obj.is_processed(str(output_dir)):
-                log.info(f"[SKIP] Already processed: {scene.name}")
-                skipped += 1
-            else:
-                unprocessed.append(scene)
-        except Exception:
-            # If identify fails, include scene (let geocode handle it)
+        # geocode outputs can have suffixes per polarization; treat any match as done.
+        scene_id = scene.stem
+        tif_matches = list(output_dir.glob(f"{scene_id}*.tif"))
+
+        if tif_matches:
+            log.info(f"[SKIP] Already processed (tif exists): {scene.name}")
+            skipped += 1
+        else:
             unprocessed.append(scene)
 
     log.info(
