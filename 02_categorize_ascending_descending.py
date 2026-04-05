@@ -14,6 +14,7 @@ import argparse
 import io
 import importlib
 import logging
+import shutil
 import zipfile
 from pathlib import Path
 
@@ -131,6 +132,27 @@ def print_result(path: Path, direction: str):
     print(f"{direction:10}  {path}")
 
 
+def move_product(path: Path, direction: str, target_root: Path) -> Path | None:
+    if direction not in {"ASCENDING", "DESCENDING"}:
+        return None
+
+    folder_name = "descending" if direction == "DESCENDING" else "ascending"
+
+    if path.parent.name.lower() == folder_name:
+        return path
+
+    target_dir = target_root / folder_name
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target_path = target_dir / path.name
+
+    if target_path.exists():
+        log.warning("Target already exists, skipping move: %s", target_path)
+        return None
+
+    moved_path = Path(shutil.move(str(path), str(target_path)))
+    return moved_path
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Detect ASCENDING/DESCENDING from Sentinel-1 PDF metadata"
@@ -160,6 +182,7 @@ def main():
         return
 
     products = find_products(args.input, recursive=args.recursive)
+    target_root = args.input[0].resolve()
 
     if not products:
         log.warning("No .zip or .SAFE products found.")
@@ -168,6 +191,7 @@ def main():
     asc = 0
     desc = 0
     unk = 0
+    moved = 0
 
     for p in products:
         if p.suffix.lower() == ".zip":
@@ -186,10 +210,16 @@ def main():
 
         print_result(p, direction)
 
+        moved_path = move_product(p, direction, target_root=target_root)
+        if moved_path is not None and moved_path != p:
+            moved += 1
+            log.info("Moved -> %s", moved_path)
+
     print("\nSummary")
     print(f"ASCENDING : {asc}")
     print(f"DESCENDING: {desc}")
     print(f"UNKNOWN   : {unk}")
+    print(f"MOVED     : {moved}")
 
 
 if __name__ == "__main__":
