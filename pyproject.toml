@@ -1,0 +1,59 @@
+# JVe testing environment
+[project]
+dependencies = []
+name = "gis"
+requires-python = ">= 3.11"  # Minimum Python version required
+version = "0.1.0"
+description = "GIS analysis package"
+
+[build-system]
+build-backend = "hatchling.build"
+requires = ["hatchling"]
+
+# Pixi workspace configuration for conda environment management
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["win-64"]  # Windows 64-bit only
+
+
+
+[tool.pixi.tasks]
+# Add custom tasks here
+
+[project.optional-dependencies]
+dev = ["black>=25.1.0,<26", "black-jupyter>=25.1.0,<26", "jupyter>=1.1.1,<2", "ipykernel>=7.1.0,<8"]
+
+[tool.pixi.dependencies]
+# Core GIS libraries
+geopandas = ">=1.1.1,<2"
+pandas = ">=2.3.3,<3"
+lxml = ">=6.0.2,<7"        # XML processing
+
+# Development tools
+pip = "*"                  # Package installer
+black = ">=25.1.0,<26"     # Code formatter
+
+# Scientific computing
+numpy = ">=2.3.5,<3"
+numba = ">=0.62.1,<0.63"   # JIT compiler for numerical functions
+matplotlib = ">=3.10.8,<4" # Plotting library
+pyyaml = ">=6.0.3,<7"
+openpyxl = ">=3.1.5,<4"
+networkx = ">=3.6,<4"
+jupyter = ">=1.1.1,<2"
+ipykernel = ">=7.1.0,<8"
+xvec = ">=0.5.2,<0.6"
+geodatasets = ">=2024.8.0,<2025"
+xarray = ">=2025.11.0,<2026"
+xproj = ">=0.2.1,<0.3"
+affine = ">=2.4.0,<3"
+python = "==3.11"
+fiona = ">=1.10.1,<2"
+gdal = ">=3.10.0,<4"
+pyflwdir = ">=0.5.10,<0.6" # Deltares hydro lib
+tqdm = ">=4.67.1,<5"
+black-jupyter = ">=25.1.0,<26"
+pyarrow = ">=18.1.0,<19"
+pysal = ">=25.7,<26"
+h3 = ">=4.4.1,<5"
+spatialist = ">=0.19.0,<0.20"
