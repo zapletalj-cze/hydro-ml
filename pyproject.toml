@@ -48,7 +48,6 @@ xarray = ">=2025.11.0,<2026"
 xproj = ">=0.2.1,<0.3"
 affine = ">=2.4.0,<3"
 python = "==3.11"
-fiona = ">=1.10.1,<2"
 gdal = ">=3.10.0,<4"
 pyflwdir = ">=0.5.10,<0.6" # Deltares hydro lib
 tqdm = ">=4.67.1,<5"
