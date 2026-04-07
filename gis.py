@@ -1708,6 +1708,29 @@ class MosaicRasters:
         src = None
         return cell_size_x, cell_size_y
 
+    @staticmethod
+    def _is_nodata(arr, nodata_val):
+        """Boolean mask where pixel is nodata.
+
+        Handles three edge-cases that ``==`` misses:
+        * NaN pixels in float arrays (NaN == x is always False in IEEE 754)
+        * nodata value itself is NaN
+        * float32 array vs float64 nodata value precision mismatch
+        """
+        mask = np.zeros(arr.shape, dtype=bool)
+        # NaN is always treated as nodata for float arrays
+        if np.issubdtype(arr.dtype, np.floating):
+            mask = np.isnan(arr)
+        if nodata_val is not None:
+            try:
+                if np.isnan(nodata_val):
+                    return mask  # NaN already captured above
+            except (TypeError, ValueError):
+                pass
+            # Cast nodata to the array's dtype so float32 == float64 works
+            mask |= (arr == arr.dtype.type(nodata_val))
+        return mask
+
     def _get_max_extent(self):
         """
         Private method which will get extent from all rasters
@@ -1871,20 +1894,21 @@ class MosaicRasters:
 
                     ## comparing if array already written is smaller or not
                     array_src = band.ReadAsArray(0, 0, cols, rows)
-                    array_src = np.where(
-                        (array_src == no_data_src), self.no_data, array_src
-                    )
+                    src_nd = self._is_nodata(array_src, no_data_src)
+                    array_src = np.where(src_nd, self.no_data, array_src)
 
                     array_dst = band_dst.ReadAsArray(locx, locy, cols, rows)
+                    dst_nd = self._is_nodata(array_dst, self.no_data)
+                    src_nd2 = self._is_nodata(array_src, self.no_data)
 
                     array_to_write = np.where(
-                        array_dst != self.no_data,
+                        ~dst_nd,
                         np.where(
-                            array_src != self.no_data,
+                            ~src_nd2,
                             np.where(array_dst < array_src, array_src, array_dst),
                             array_dst,
                         ),
-                        np.where(array_src != self.no_data, array_src, self.no_data),
+                        np.where(~src_nd2, array_src, self.no_data),
                     )
 
                     self.dst.GetRasterBand(band_number + 1).WriteArray(
@@ -1894,6 +1918,7 @@ class MosaicRasters:
             except Exception as e:
                 print(e)
 
+        self.dst.FlushCache()
         self.dst = None
         return self.output
 
@@ -1942,17 +1967,18 @@ class MosaicRasters:
 
                     ## comparing if array already written is smaller or not
                     array_src = band.ReadAsArray(0, 0, cols, rows)
-                    array_src = np.where(
-                        (array_src == no_data_src), self.no_data, array_src
-                    )
+                    src_nd = self._is_nodata(array_src, no_data_src)
+                    array_src = np.where(src_nd, self.no_data, array_src)
 
                     array_dst = band_dst.ReadAsArray(locx, locy, cols, rows)
+                    dst_nd = self._is_nodata(array_dst, self.no_data)
+                    src_nd2 = self._is_nodata(array_src, self.no_data)
                     ## if DEST raster has data
                     array_to_write = np.where(
-                        array_dst != self.no_data,
+                        ~dst_nd,
                         ## if also src has data
                         np.where(
-                            array_src != self.no_data,
+                            ~src_nd2,
                             ## if output is higher than small
                             np.where(
                                 array_dst > array_src,
@@ -1966,7 +1992,7 @@ class MosaicRasters:
                         ),
                         ## if no_data in dest but data in src
                         np.where(
-                            array_src != self.no_data,
+                            ~src_nd2,
                             ## leave as src small
                             array_src,
                             ## else put no_data if all is no_data
@@ -1979,6 +2005,7 @@ class MosaicRasters:
                     )
             except Exception as e:
                 print(e)
+        self.dst.FlushCache()
         self.dst = None
         return self.output
 
@@ -2028,19 +2055,20 @@ class MosaicRasters:
 
                 ## comparing if array already written is smaller or not
                 array_src = band.ReadAsArray(0, 0, cols, rows)
-                array_src = np.where(
-                    (array_src == no_data_src), self.no_data, array_src
-                )
+                src_nd = self._is_nodata(array_src, no_data_src)
+                array_src = np.where(src_nd, self.no_data, array_src)
 
                 array_dst = band_dst.ReadAsArray(locx, locy, cols, rows)
+                dst_nd = self._is_nodata(array_dst, self.no_data)
+                src_nd2 = self._is_nodata(array_src, self.no_data)
                 ## if DEST raster has data
                 array_to_write = np.where(
-                    array_dst != self.no_data,
+                    ~dst_nd,
                     ## if also src has data
-                    np.where(array_src != self.no_data, array_src, array_dst),
+                    np.where(~src_nd2, array_src, array_dst),
                     ## if no_data in dest but data in src
                     np.where(
-                        array_src != self.no_data,
+                        ~src_nd2,
                         ## leave as src small
                         array_src,
                         ## else put no_data if all is no_data
@@ -2051,6 +2079,7 @@ class MosaicRasters:
                 self.dst.GetRasterBand(band_number + 1).WriteArray(
                     array_to_write, locx, locy
                 )
+        self.dst.FlushCache()
         self.dst = None
         return self.output
 
@@ -2101,10 +2130,10 @@ class MosaicRasters:
 
                 ## comparing if array already written is smaller or not
                 array_src = band.ReadAsArray(0, 0, cols, rows)
-                array_src = np.where((array_src == no_data_src), 0, array_src)
+                array_src = np.where(self._is_nodata(array_src, no_data_src), 0, array_src)
 
                 array_dst = band_dst.ReadAsArray(locx, locy, cols, rows)
-                array_dst = np.where(array_dst == no_data_dst, 0, array_dst)
+                array_dst = np.where(self._is_nodata(array_dst, no_data_dst), 0, array_dst)
                 ## if DEST raster has data
                 array_to_write = array_dst + array_src
                 array_to_write = np.where(
@@ -2114,5 +2143,6 @@ class MosaicRasters:
                     array_to_write, locx, locy
                 )
 
+        self.dst.FlushCache()
         self.dst = None
         return self.output
