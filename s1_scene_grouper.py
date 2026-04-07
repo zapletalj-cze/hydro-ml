@@ -58,6 +58,11 @@ EPSG          = 2180   # PL-1992 — hardcoded, consistent with pyroSAR output
 # Adjacent-track overlap:        IoU typically  0.05 – 0.25.
 IOU_THRESHOLD = 0.85
 
+# Groups whose union footprint covers less than this fraction of the AOI
+# are excluded from the JSON output and flagged in the tile index.
+# Individual scenes within a group may have any coverage.
+MIN_GROUP_COVERAGE = 0.80
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Scene collection
 # ══════════════════════════════════════════════════════════════════════════════
@@ -216,6 +221,9 @@ def coverage_fraction(geoms: list, aoi_geom) -> float:
     return covered / aoi_geom.area if aoi_geom.area > 0 else 0.0
 
 
+
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Main orchestration
 # ══════════════════════════════════════════════════════════════════════════════
@@ -248,27 +256,49 @@ def process_direction(
     tile_index['group'] = group_labels
 
     # Build output dict + per-group console summary
+    all_geoms        = list(tile_index.geometry)
     group_dict: dict[str, list[str]] = {}
+    n_excluded_groups = 0
+
     for g_idx, row_indices in enumerate(groups):
-        label     = f'grp_{g_idx:03d}'
-        paths     = tile_index.iloc[row_indices]['path'].tolist()
-        geoms     = list(tile_index.iloc[row_indices]['geometry'])
-        cov       = coverage_fraction(geoms, aoi_geom)
-        ext       = unary_union(geoms).bounds   # (xmin, ymin, xmax, ymax)
+        label      = f'grp_{g_idx:03d}'
+        paths      = tile_index.iloc[row_indices]['path'].tolist()
+        geoms      = [all_geoms[i] for i in row_indices]
+        cov        = coverage_fraction(geoms, aoi_geom)
+        ext        = unary_union(geoms).bounds
 
-        flag = '⚠ partial' if cov < 0.80 else ''
-        print(
-            f'  {label} : {len(paths):3d} scenes  '
-            f'AOI coverage: {cov * 100:5.1f}%  '
-            f'x: {ext[0]:.0f} – {ext[2]:.0f}  '
-            f'y: {ext[1]:.0f} – {ext[3]:.0f}  {flag}'
-        )
-        group_dict[label] = paths
+        if cov < MIN_GROUP_COVERAGE:
+            # Group does not meet coverage threshold — exclude from output
+            n_excluded_groups += 1
+            for i in row_indices:
+                group_labels[i] = f'{label}_excluded'
+            print(
+                f'  {label} : ⚠  EXCLUDED  {len(paths):3d} scenes  '
+                f'AOI coverage: {cov * 100:5.1f}% < {MIN_GROUP_COVERAGE * 100:.0f}%  '
+                f'x: {ext[0]:.0f} – {ext[2]:.0f}'
+            )
+        else:
+            group_dict[label] = paths
+            print(
+                f'  {label} :    {len(paths):3d} scenes  '
+                f'AOI coverage: {cov * 100:5.1f}%  '
+                f'x: {ext[0]:.0f} – {ext[2]:.0f}  '
+                f'y: {ext[1]:.0f} – {ext[3]:.0f}'
+            )
 
-    # Total coverage across all groups
-    all_geoms  = list(tile_index.geometry)
-    total_cov  = coverage_fraction(all_geoms, aoi_geom)
-    print(f'\n  Combined AOI coverage : {total_cov * 100:.1f}%')
+    if n_excluded_groups:
+        print(f'\n  ⚠  Groups excluded (coverage < {MIN_GROUP_COVERAGE * 100:.0f}%): {n_excluded_groups}')
+
+    # Combined coverage of accepted groups only
+    accepted_indices = [
+        i
+        for g_idx, row_indices in enumerate(groups)
+        if f'grp_{g_idx:03d}' in group_dict
+        for i in row_indices
+    ]
+    accepted_geoms = [all_geoms[i] for i in accepted_indices]
+    total_cov = coverage_fraction(accepted_geoms, aoi_geom) if accepted_geoms else 0.0
+    print(f'\n  Combined AOI coverage (accepted groups) : {total_cov * 100:.1f}%')
     if total_cov < 0.99:
         print(f'  ⚠  Coverage < 99% — possible gap in scene archive.')
 
