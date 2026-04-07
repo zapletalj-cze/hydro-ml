@@ -93,11 +93,30 @@ def collect_scenes(directory: Path, polarization: str) -> list[Path]:
 
 def read_scene_footprint(path: Path):
     """
-    Returns the exact valid-data footprint (Shapely geometry) using gdal.Footprint.
-    Traces the valid data area and completely excludes NoData collars.
+    Returns the valid-data footprint (Shapely geometry).
+    Optimized for speed: creates an in-memory downsampled VRT before extraction
+    to avoid scanning millions of high-res pixels.
     """
-    # Use gdal.Footprint to compute the true footprint in memory
-    vector_ds = gdal.Footprint('', str(path), format='Memory')
+    # 1. Rychlý downsampling v paměti na 5 % (cca 400x méně pixelů ke čtení)
+    # Nearest Neighbour je nejrychlejší a pro detekci okrajů (Data / NoData) ideální
+    translate_opts = gdal.TranslateOptions(
+        format="VRT", 
+        widthPct=5.0, 
+        heightPct=5.0, 
+        resampleAlg=gdal.GRA_NearestNeighbour
+    )
+    vrt_ds = gdal.Translate('', str(path), options=translate_opts)
+
+    if vrt_ds is None:
+        raise RuntimeError(f'Failed to create VRT for: {path}')
+
+    # 2. Tvorba footprintu nad zmenšeným modelem
+    # maxPoints určuje detail polygonu (výchozí je 100, 40 pro Sentinel scény bohatě stačí)
+    footprint_opts = gdal.FootprintOptions(
+        format='Memory',
+        maxPoints=40
+    )
+    vector_ds = gdal.Footprint('', vrt_ds, options=footprint_opts)
     
     if vector_ds is None:
         raise RuntimeError(f'Failed to compute footprint for: {path}')
@@ -107,16 +126,19 @@ def read_scene_footprint(path: Path):
         raise RuntimeError(f'Footprint layer missing for: {path}')
 
     geoms = []
-    # Iterate through vector features and extract via WKB
+    # Převod z GDAL do Shapely přes WKB
     for feature in layer:
         geom = feature.GetGeometryRef()
         if geom is not None:
             geoms.append(wkb.loads(bytes(geom.ExportToWkb())))
 
+    # Uvolnění paměti (v GDAL Python bindings doporučeno)
+    vrt_ds = None
+    vector_ds = None
+
     if not geoms:
         raise RuntimeError(f'No valid footprint geometry generated for: {path}')
 
-    # Return unioned geometry in case the footprint generated multiple polygons
     return unary_union(geoms)
 
 
