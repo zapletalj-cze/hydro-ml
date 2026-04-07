@@ -1814,8 +1814,9 @@ class MosaicRasters:
         ## we can change no data value if needed, this one is UnsignedInteger16Bit
         band.SetNoDataValue(self.no_data)
 
-        # array = np.zeros((int(tiff_height), int(tiff_width)))
-        # band.WriteArray(array)
+        # Fill all bands with nodata so unwritten pixels are not 0
+        for b in range(1, self.bands + 1):
+            dst_ds.GetRasterBand(b).Fill(self.no_data)
 
         return dst_ds
 
@@ -1846,6 +1847,8 @@ class MosaicRasters:
                     band_dst.SetDescription(desc)
 
                     no_data_src = band.GetNoDataValue()
+                    if no_data_src is None:
+                        no_data_src = self.no_data
 
                     cols = src.RasterXSize
                     rows = src.RasterYSize
@@ -1915,6 +1918,8 @@ class MosaicRasters:
                     band_dst = self.dst.GetRasterBand(band_number + 1)
                     band = src.GetRasterBand(band_number + 1)
                     no_data_src = band.GetNoDataValue()
+                    if no_data_src is None:
+                        no_data_src = self.no_data
 
                     cols = src.RasterXSize
                     rows = src.RasterYSize
@@ -2001,6 +2006,9 @@ class MosaicRasters:
 
                 band = src.GetRasterBand(band_number + 1)
                 no_data_src = band.GetNoDataValue()
+                # Guard: if source has no nodata set, fall back to dst nodata
+                if no_data_src is None:
+                    no_data_src = self.no_data
 
                 cols = src.RasterXSize
                 rows = src.RasterYSize
@@ -2069,6 +2077,8 @@ class MosaicRasters:
 
                 band = src.GetRasterBand(band_number + 1)
                 no_data_src = band.GetNoDataValue()
+                if no_data_src is None:
+                    no_data_src = self.no_data
                 no_data_dst = self.dst.GetRasterBand(band_number + 1).GetNoDataValue()
 
                 cols = src.RasterXSize

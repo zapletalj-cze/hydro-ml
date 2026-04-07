@@ -1,4 +1,4 @@
-from ifgis.raster import MosaicRasters
+from gis import MosaicRasters
 import geopandas as gpd
 from gis import Vector, Raster
 from osgeo import gdal, osr
