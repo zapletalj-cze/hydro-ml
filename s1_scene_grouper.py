@@ -54,17 +54,17 @@ from shapely.ops import unary_union
 # CONFIG
 # ══════════════════════════════════════════════════════════════════════════════
 
-ASC_DIR  = Path(r'C:/data/processed/ascending')
-DESC_DIR = Path(r'C:/data/processed/descending')
-AOI_PATH = Path(r'C:/data/aoi/aoi.gpkg')
-OUT_DIR  = Path(r'C:/data/model')
+ASC_DIR  = Path(r'D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\sentinel1_data\processed\ascending')
+DESC_DIR = Path(r'D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\sentinel1_data\processed\descending')
+AOI_PATH = Path(r'D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\AOI_Poland.gpkg')
+OUT_DIR  = Path(r'D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\sentinel1_data\processed_selected')
 
-POLARIZATION     = 'VV'    # VV used for footprints; VH has identical extent
+POLARIZATION     = 'VH'    # VV used for footprints; VH has identical extent
 EPSG             = 2180    # PL-1992 — hardcoded, consistent with pyroSAR output
 
 # A group is considered complete once its union covers this fraction of the AOI.
 # Scenes may individually cover any fraction.
-MIN_GROUP_COVERAGE = 0.80
+MIN_GROUP_COVERAGE = 0.95
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Scene collection
@@ -335,7 +335,7 @@ def main(dry_run: bool = False) -> None:
         group_dict, tile_index = process_direction(directory, direction, aoi_geom)
         all_groups[direction] = group_dict
 
-        gpkg_path = OUT_DIR / f'{direction}_tile_index.gpkg'
+        gpkg_path = OUT_DIR / f'{direction}_{POLARIZATION}_tile_index.gpkg'
         tile_index.to_file(gpkg_path, driver='GPKG', engine='pyogrio')
         print(f'  Tile index -> {gpkg_path}')
 
