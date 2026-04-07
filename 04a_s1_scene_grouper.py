@@ -47,7 +47,7 @@ from pathlib import Path
 
 import geopandas as gpd
 from osgeo import gdal
-from shapely.geometry import box
+from shapely import wkb
 from shapely.ops import unary_union
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -88,31 +88,41 @@ def collect_scenes(directory: Path, polarization: str) -> list[Path]:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Tile index
+# Exact Footprint Extraction
 # ══════════════════════════════════════════════════════════════════════════════
 
-def read_scene_footprint(path: Path) -> tuple[float, float, float, float]:
+def read_scene_footprint(path: Path):
     """
-    Returns (xmin, ymin, xmax, ymax) from GeoTIFF header metadata only.
-    No pixel data is read — fast even for BigTIFF scenes.
+    Returns the exact valid-data footprint (Shapely geometry) using gdal.Footprint.
+    Traces the valid data area and completely excludes NoData collars.
     """
-    ds = gdal.Open(str(path), gdal.GA_ReadOnly)
-    if ds is None:
-        raise FileNotFoundError(f'Cannot open: {path}')
-    gt    = ds.GetGeoTransform()
-    nrows = ds.RasterYSize
-    ncols = ds.RasterXSize
-    xmin  = gt[0]
-    ymax  = gt[3]
-    xmax  = xmin + ncols * gt[1]
-    ymin  = ymax + nrows * gt[5]   # gt[5] is negative for north-up rasters
-    ds    = None
-    return xmin, ymin, xmax, ymax
+    # Use gdal.Footprint to compute the true footprint in memory
+    vector_ds = gdal.Footprint('', str(path), format='Memory')
+    
+    if vector_ds is None:
+        raise RuntimeError(f'Failed to compute footprint for: {path}')
+
+    layer = vector_ds.GetLayer()
+    if layer is None:
+        raise RuntimeError(f'Footprint layer missing for: {path}')
+
+    geoms = []
+    # Iterate through vector features and extract via WKB
+    for feature in layer:
+        geom = feature.GetGeometryRef()
+        if geom is not None:
+            geoms.append(wkb.loads(bytes(geom.ExportToWkb())))
+
+    if not geoms:
+        raise RuntimeError(f'No valid footprint geometry generated for: {path}')
+
+    # Return unioned geometry in case the footprint generated multiple polygons
+    return unary_union(geoms)
 
 
 def build_tile_index(directory: Path, polarization: str) -> gpd.GeoDataFrame:
     """
-    Builds a spatial tile index GeoDataFrame for all scenes in directory.
+    Builds a spatial footprint index GeoDataFrame for all scenes in directory.
     CRS is set to EPSG:2180 — matches pyroSAR output, no reprojection needed.
     """
     scenes = collect_scenes(directory, polarization)
@@ -127,11 +137,11 @@ def build_tile_index(directory: Path, polarization: str) -> gpd.GeoDataFrame:
     skipped = 0
     for path in scenes:
         try:
-            xmin, ymin, xmax, ymax = read_scene_footprint(path)
+            footprint_geom = read_scene_footprint(path)
             records.append({
                 'path':     str(path),
                 'name':     path.stem,
-                'geometry': box(xmin, ymin, xmax, ymax),
+                'geometry': footprint_geom,
             })
         except Exception as exc:
             print(f'  Warning: skipping {path.name} — {exc}')
@@ -176,7 +186,6 @@ def build_coverage_groups(
         Row indices of scenes that could not be assigned to any complete
         group (pool exhausted before reaching min_coverage in the last
         group).  These are excluded from the JSON output.
-        group).  These are included as a final partial group if non-empty.
     """
     geoms    = list(tile_index.geometry)
     aoi_area = aoi_geom.area
@@ -266,7 +275,7 @@ def process_direction(
     aoi_geom,
 ) -> tuple[dict[str, list[str]], gpd.GeoDataFrame]:
     """
-    Builds tile index, runs greedy coverage grouping, annotates the
+    Builds footprint index, runs greedy coverage grouping, annotates the
     GeoDataFrame, and returns (group_dict, annotated_tile_index).
     """
     print(f'\n── {direction.upper()} ─────────────────────────────────────────────')
@@ -288,6 +297,7 @@ def process_direction(
         cov    = coverage_fraction(geoms, aoi_geom)
         ext    = unary_union(geoms).bounds
         paths  = tile_index.iloc[row_indices]['path'].tolist()
+        
         if cov < MIN_GROUP_COVERAGE:
             # Partial group — exclude from JSON and tile index
             for i in row_indices:
@@ -343,7 +353,7 @@ def main(dry_run: bool = False) -> None:
 
         gpkg_path = OUT_DIR / f'{direction}_tile_index.gpkg'
         tile_index.to_file(gpkg_path, driver='GPKG', engine='pyogrio')
-        print(f'  Tile index -> {gpkg_path}')
+        print(f'  Footprint index -> {gpkg_path}')
 
     # ── Grand summary ──────────────────────────────────────────────────────
     print('\n══ Summary ══════════════════════════════════════════════════')
