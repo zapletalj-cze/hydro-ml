@@ -1,15 +1,32 @@
 """
 s1_scene_grouper.py
 ───────────────────
-Groups preprocessed Sentinel-1 GeoTIFFs by orbit track based on
-spatial footprint similarity (IoU).
+Builds coverage groups from preprocessed Sentinel-1 GeoTIFFs using a
+greedy set-cover algorithm.
 
 Input:  preprocessed GeoTIFFs produced by pyroSAR (EPSG:2180, sigma0)
 Output:
   1. Tile-index GeoPackages  (asc_tile_index.gpkg, desc_tile_index.gpkg)
-     → load in QGIS for visual QC
+     → load in QGIS for visual QC; each scene is coloured by group
   2. scene_groups.json       → machine-readable input for Section 2
   3. Console summary
+
+Algorithm
+---------
+Groups are built one at a time from a shared pool of scenes.
+Within each group:
+  1. Pick the scene that contributes the most new AOI coverage (largest
+     intersection with AOI minus what the group already covers).
+  2. Add it to the group; update the running group union.
+  3. Repeat until group coverage >= MIN_GROUP_COVERAGE.
+Scenes in the group are removed from the pool; the next group starts
+fresh from the remaining scenes.
+
+Selection at each step deliberately favours tiles with MINIMAL overlap
+with the existing group — i.e. tiles that add the most NEW area.
+
+Partial groups (pool exhausted before reaching MIN_GROUP_COVERAGE) are
+included in the JSON but flagged in the tile index and console output.
 
 Output JSON structure
 ---------------------
@@ -17,23 +34,15 @@ Output JSON structure
   "asc": {
     "grp_000": ["C:/.../scene1_VV_grd_elp.tif", ...],
     "grp_001": ["C:/.../scene4_VV_grd_elp.tif", ...],
-    ...
   },
-  "desc": {
-    "grp_000": [...],
-    ...
-  }
+  "desc": { ... }
 }
-
-Each group = one orbit track = scenes to be temporally averaged together.
-Groups from different tracks are mosaicked after averaging.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-from collections import defaultdict
 from pathlib import Path
 
 import geopandas as gpd
@@ -50,17 +59,11 @@ DESC_DIR = Path(r'C:/data/processed/descending')
 AOI_PATH = Path(r'C:/data/aoi/aoi.gpkg')
 OUT_DIR  = Path(r'C:/data/model')
 
-POLARIZATION  = 'VV'   # VV used for footprints; VH has identical extent
-EPSG          = 2180   # PL-1992 — hardcoded, consistent with pyroSAR output
+POLARIZATION     = 'VV'    # VV used for footprints; VH has identical extent
+EPSG             = 2180    # PL-1992 — hardcoded, consistent with pyroSAR output
 
-# Scenes with IoU >= this threshold are treated as the same orbit track.
-# Same-track Sentinel-1 repeats: IoU typically > 0.97.
-# Adjacent-track overlap:        IoU typically  0.05 – 0.25.
-IOU_THRESHOLD = 0.85
-
-# Groups whose union footprint covers less than this fraction of the AOI
-# are excluded from the JSON output and flagged in the tile index.
-# Individual scenes within a group may have any coverage.
+# A group is considered complete once its union covers this fraction of the AOI.
+# Scenes may individually cover any fraction.
 MIN_GROUP_COVERAGE = 0.80
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -141,70 +144,99 @@ def build_tile_index(directory: Path, polarization: str) -> gpd.GeoDataFrame:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# IoU-based grouping via Union-Find
+# Greedy set-cover grouping
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _iou(geom_a, geom_b) -> float:
-    inter = geom_a.intersection(geom_b).area
-    union = geom_a.union(geom_b).area
-    return inter / union if union > 0 else 0.0
-
-
-def group_by_footprint(
-    gdf: gpd.GeoDataFrame,
-    iou_threshold: float = IOU_THRESHOLD,
-) -> list[list[int]]:
+def build_coverage_groups(
+    tile_index: gpd.GeoDataFrame,
+    aoi_geom,
+    min_coverage: float = MIN_GROUP_COVERAGE,
+) -> tuple[list[list[int]], list[int]]:
     """
-    Groups rows of gdf by spatial footprint similarity using Union-Find.
+    Builds coverage groups via greedy set cover.
 
-    Two scenes are placed in the same group when their bounding-box IoU
-    exceeds iou_threshold.  Grouping is transitive: if A~B and B~C then
-    A, B, C all land in the same group even if IoU(A, C) < threshold.
+    Each group is grown by repeatedly selecting the scene from the
+    remaining pool that adds the most new AOI area to the group:
 
-    Returns a list of groups, each group being a sorted list of row indices
-    into gdf.  Groups are sorted by the x-centroid of their union extent
-    (west → east), which matches the natural left-to-right mosaic order.
+        gain(i) = area( geoms[i] ∩ AOI ) - area( geoms[i] ∩ group_union ∩ AOI )
 
-    Complexity: O(n²) pairwise IoU — acceptable for n ≤ ~500 scenes.
+    This is equivalent to preferring tiles with minimal overlap with the
+    current group contents.  Ties are broken by scene index (stable sort).
+
+    A group is closed once its union covers >= min_coverage of the AOI,
+    or when no remaining scene adds any new coverage.  All scenes in a
+    closed group are removed from the pool.
+
+    Returns
+    -------
+    groups : list[list[int]]
+        Each inner list contains the row indices (into tile_index) of one
+        group, in the order they were added.
+    partial : list[int]
+        Row indices of scenes that could not be assigned to any complete
+        group (pool exhausted before reaching min_coverage in the last
+        group).  These are included as a final partial group if non-empty.
     """
-    n     = len(gdf)
-    geoms = list(gdf.geometry)
+    geoms    = list(tile_index.geometry)
+    aoi_area = aoi_geom.area
 
-    # ── Union-Find with path compression ──────────────────────────────────
-    parent = list(range(n))
+    # Pre-compute each scene's intersection with the AOI (used repeatedly).
+    # Stored as Shapely geometry so we can re-intersect with group_union later.
+    aoi_intersections = [g.intersection(aoi_geom) for g in geoms]
+    aoi_inter_areas   = [g.area for g in aoi_intersections]
 
-    def find(x: int) -> int:
-        while parent[x] != x:
-            parent[x] = parent[parent[x]]   # path halving
-            x = parent[x]
-        return x
+    remaining = list(range(len(geoms)))   # indices into tile_index
+    groups: list[list[int]] = []
 
-    def union(x: int, y: int) -> None:
-        px, py = find(x), find(y)
-        if px != py:
-            parent[px] = py
+    while remaining:
+        group: list[int]  = []
+        group_union       = None   # Shapely geometry, grown incrementally
+        group_cov         = 0.0
 
-    for i in range(n):
-        for j in range(i + 1, n):
-            if _iou(geoms[i], geoms[j]) >= iou_threshold:
-                union(i, j)
+        while group_cov < min_coverage:
+            # Score every remaining scene by new AOI area it would add
+            best_idx  = None
+            best_gain = -1.0
 
-    # Collect buckets
-    buckets: dict[int, list[int]] = defaultdict(list)
-    for i in range(n):
-        buckets[find(i)].append(i)
+            for i in remaining:
+                if aoi_inter_areas[i] == 0:
+                    continue   # scene does not intersect AOI at all — skip
 
-    groups = [sorted(v) for v in buckets.values()]
+                if group_union is None:
+                    gain = aoi_inter_areas[i]
+                else:
+                    already = aoi_intersections[i].intersection(group_union).area
+                    gain    = aoi_inter_areas[i] - already
 
-    # Sort groups west → east by x-centroid of their union footprint
-    def x_centroid(row_indices: list[int]) -> float:
-        return unary_union([geoms[i] for i in row_indices]).centroid.x
+                if gain > best_gain:
+                    best_gain = gain
+                    best_idx  = i
 
-    return sorted(groups, key=x_centroid)
+            if best_idx is None or best_gain <= 0:
+                break   # no remaining scene adds new coverage — stop growing
+
+            # Add best scene to group
+            group.append(best_idx)
+            remaining.remove(best_idx)
+
+            if group_union is None:
+                group_union = geoms[best_idx]
+            else:
+                group_union = group_union.union(geoms[best_idx])
+
+            group_cov = group_union.intersection(aoi_geom).area / aoi_area
+
+        if group:
+            groups.append(group)
+
+    # Any leftover scenes that produced no complete group stay as partial
+    # (remaining is empty at this point because all scenes were consumed
+    #  inside the while-loop; the last group may be partial).
+    return groups, []
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# AOI coverage diagnostics
+# AOI helpers
 # ══════════════════════════════════════════════════════════════════════════════
 
 def load_aoi(aoi_path: Path):
@@ -217,11 +249,10 @@ def load_aoi(aoi_path: Path):
 
 def coverage_fraction(geoms: list, aoi_geom) -> float:
     """Fraction of the AOI area covered by the union of geoms."""
+    if not geoms:
+        return 0.0
     covered = unary_union(geoms).intersection(aoi_geom).area
     return covered / aoi_geom.area if aoi_geom.area > 0 else 0.0
-
-
-
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -234,71 +265,51 @@ def process_direction(
     aoi_geom,
 ) -> tuple[dict[str, list[str]], gpd.GeoDataFrame]:
     """
-    Builds tile index, groups scenes by footprint, annotates the GeoDataFrame,
-    and returns (group_dict, annotated_tile_index).
+    Builds tile index, runs greedy coverage grouping, annotates the
+    GeoDataFrame, and returns (group_dict, annotated_tile_index).
     """
     print(f'\n── {direction.upper()} ─────────────────────────────────────────────')
 
     tile_index = build_tile_index(directory, POLARIZATION)
-    groups     = group_by_footprint(tile_index)
 
-    print(f'  Orbit tracks detected : {len(groups)}')
-    print(f'  IoU threshold         : {IOU_THRESHOLD}')
+    print(f'  Building coverage groups (min AOI coverage: {MIN_GROUP_COVERAGE * 100:.0f}%)...')
+    groups, _ = build_coverage_groups(tile_index, aoi_geom)
+    print(f'  Groups built : {len(groups)}')
     print()
 
-    # Annotate tile index with group label
-    group_labels = [''] * len(tile_index)
+    all_geoms    = list(tile_index.geometry)
+    group_labels = ['unassigned'] * len(tile_index)
+    group_dict: dict[str, list[str]] = {}
+
     for g_idx, row_indices in enumerate(groups):
-        label = f'grp_{g_idx:03d}'
+        label  = f'grp_{g_idx:03d}'
+        geoms  = [all_geoms[i] for i in row_indices]
+        cov    = coverage_fraction(geoms, aoi_geom)
+        ext    = unary_union(geoms).bounds
+        paths  = tile_index.iloc[row_indices]['path'].tolist()
+        is_partial = cov < MIN_GROUP_COVERAGE
+
+        tile_label = f'{label}_partial' if is_partial else label
         for i in row_indices:
-            group_labels[i] = label
+            group_labels[i] = tile_label
+
+        group_dict[label] = paths
+
+        status = f'⚠  PARTIAL {cov * 100:5.1f}%' if is_partial else f'   {cov * 100:5.1f}%'
+        print(
+            f'  {label} : {status}  '
+            f'{len(paths):3d} scenes  '
+            f'x: {ext[0]:.0f} – {ext[2]:.0f}  '
+            f'y: {ext[1]:.0f} – {ext[3]:.0f}'
+        )
+
     tile_index = tile_index.copy()
     tile_index['group'] = group_labels
 
-    # Build output dict + per-group console summary
-    all_geoms        = list(tile_index.geometry)
-    group_dict: dict[str, list[str]] = {}
-    n_excluded_groups = 0
-
-    for g_idx, row_indices in enumerate(groups):
-        label      = f'grp_{g_idx:03d}'
-        paths      = tile_index.iloc[row_indices]['path'].tolist()
-        geoms      = [all_geoms[i] for i in row_indices]
-        cov        = coverage_fraction(geoms, aoi_geom)
-        ext        = unary_union(geoms).bounds
-
-        if cov < MIN_GROUP_COVERAGE:
-            # Group does not meet coverage threshold — exclude from output
-            n_excluded_groups += 1
-            for i in row_indices:
-                group_labels[i] = f'{label}_excluded'
-            print(
-                f'  {label} : ⚠  EXCLUDED  {len(paths):3d} scenes  '
-                f'AOI coverage: {cov * 100:5.1f}% < {MIN_GROUP_COVERAGE * 100:.0f}%  '
-                f'x: {ext[0]:.0f} – {ext[2]:.0f}'
-            )
-        else:
-            group_dict[label] = paths
-            print(
-                f'  {label} :    {len(paths):3d} scenes  '
-                f'AOI coverage: {cov * 100:5.1f}%  '
-                f'x: {ext[0]:.0f} – {ext[2]:.0f}  '
-                f'y: {ext[1]:.0f} – {ext[3]:.0f}'
-            )
-
-    if n_excluded_groups:
-        print(f'\n  ⚠  Groups excluded (coverage < {MIN_GROUP_COVERAGE * 100:.0f}%): {n_excluded_groups}')
-
-    # Combined coverage of accepted groups only
-    accepted_indices = [
-        i
-        for g_idx, row_indices in enumerate(groups)
-        if f'grp_{g_idx:03d}' in group_dict
-        for i in row_indices
-    ]
-    accepted_geoms = [all_geoms[i] for i in accepted_indices]
-    total_cov = coverage_fraction(accepted_geoms, aoi_geom) if accepted_geoms else 0.0
-    print(f'\n  Combined AOI coverage (accepted groups) : {total_cov * 100:.1f}%')
+    # Overall coverage from all groups combined
+    all_assigned = [i for grp in groups for i in grp]
+    total_cov = coverage_fraction([all_geoms[i] for i in all_assigned], aoi_geom)
+    print(f'\n  Combined AOI coverage : {total_cov * 100:.1f}%')
     if total_cov < 0.99:
         print(f'  ⚠  Coverage < 99% — possible gap in scene archive.')
 
@@ -324,28 +335,26 @@ def main(dry_run: bool = False) -> None:
         group_dict, tile_index = process_direction(directory, direction, aoi_geom)
         all_groups[direction] = group_dict
 
-        if not dry_run:
-            gpkg_path = OUT_DIR / f'{direction}_tile_index.gpkg'
-            tile_index.to_file(gpkg_path, driver='GPKG', engine='pyogrio')
-            print(f'  Tile index -> {gpkg_path}')
+        gpkg_path = OUT_DIR / f'{direction}_tile_index.gpkg'
+        tile_index.to_file(gpkg_path, driver='GPKG', engine='pyogrio')
+        print(f'  Tile index -> {gpkg_path}')
 
     # ── Grand summary ──────────────────────────────────────────────────────
     print('\n══ Summary ══════════════════════════════════════════════════')
     total_groups = 0
     for direction, groups in all_groups.items():
         n_scenes = sum(len(v) for v in groups.values())
-        print(f'  {direction.upper()}: {len(groups)} tracks,  {n_scenes} scenes total')
+        print(f'  {direction.upper()}: {len(groups)} groups,  {n_scenes} scenes total')
         total_groups += len(groups)
-    print(f'\n  Mosaic strips after temporal averaging : {total_groups}')
+    print(f'\n  Total groups : {total_groups}')
     print('═════════════════════════════════════════════════════════════')
 
-    if not dry_run:
-        json_path = OUT_DIR / 'scene_groups.json'
-        with open(json_path, 'w', encoding='utf-8') as f:
-            json.dump(all_groups, f, indent=2, ensure_ascii=False)
-        print(f'\n  Grouping JSON -> {json_path}')
-    else:
-        # Print a readable preview without full paths
+    json_path = OUT_DIR / 'scene_groups.json'
+    with open(json_path, 'w', encoding='utf-8') as f:
+        json.dump(all_groups, f, indent=2, ensure_ascii=False)
+    print(f'\n  Grouping JSON -> {json_path}')
+
+    if dry_run:
         print('\n  Dry-run preview (first 2 groups per direction):')
         preview: dict = {}
         for direction, groups in all_groups.items():
@@ -361,7 +370,7 @@ def main(dry_run: bool = False) -> None:
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
-        description='Group preprocessed S1 GeoTIFFs by orbit track (IoU).'
+        description='Build AOI-coverage groups from preprocessed S1 GeoTIFFs.'
     )
     parser.add_argument(
         '--dry-run', action='store_true',
