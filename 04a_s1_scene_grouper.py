@@ -94,15 +94,17 @@ def collect_scenes(directory: Path, polarization: str) -> list[Path]:
 def read_scene_footprint(path: Path):
     """
     Returns the valid-data footprint (Shapely geometry).
-    Optimized for speed: creates an in-memory downsampled VRT before extraction
-    to avoid scanning millions of high-res pixels.
+    Optimized for maximum speed in downstream spatial operations:
+    1. Creates an aggressively downsampled in-memory VRT to minimize pixel reading.
+    2. Extracts the footprint vector.
+    3. Returns the convex hull of the footprint to simplify the geometry.
     """
-    # 1. Rychlý downsampling v paměti na 5 % (cca 400x méně pixelů ke čtení)
-    # Nearest Neighbour je nejrychlejší a pro detekci okrajů (Data / NoData) ideální
+    # 1. Aggressive in-memory downsampling (2% of original size).
+    # Nearest Neighbour is fastest and sufficient for NoData boundary detection.
     translate_opts = gdal.TranslateOptions(
         format="VRT", 
-        widthPct=5.0, 
-        heightPct=5.0, 
+        widthPct=2.0, 
+        heightPct=2.0, 
         resampleAlg=gdal.GRA_NearestNeighbour
     )
     vrt_ds = gdal.Translate('', str(path), options=translate_opts)
@@ -110,11 +112,11 @@ def read_scene_footprint(path: Path):
     if vrt_ds is None:
         raise RuntimeError(f'Failed to create VRT for: {path}')
 
-    # 2. Tvorba footprintu nad zmenšeným modelem
-    # maxPoints určuje detail polygonu (výchozí je 100, 40 pro Sentinel scény bohatě stačí)
+    # 2. Footprint creation over the downsized raster.
+    # Keep maxPoints low since we will simplify it anyway.
     footprint_opts = gdal.FootprintOptions(
         format='Memory',
-        maxPoints=40
+        maxPoints=20
     )
     vector_ds = gdal.Footprint('', vrt_ds, options=footprint_opts)
     
@@ -126,20 +128,23 @@ def read_scene_footprint(path: Path):
         raise RuntimeError(f'Footprint layer missing for: {path}')
 
     geoms = []
-    # Převod z GDAL do Shapely přes WKB
+    # Convert from GDAL to Shapely via WKB
     for feature in layer:
         geom = feature.GetGeometryRef()
         if geom is not None:
             geoms.append(wkb.loads(bytes(geom.ExportToWkb())))
 
-    # Uvolnění paměti (v GDAL Python bindings doporučeno)
+    # Explicitly release memory (recommended in GDAL Python bindings)
     vrt_ds = None
     vector_ds = None
 
     if not geoms:
         raise RuntimeError(f'No valid footprint geometry generated for: {path}')
 
-    return unary_union(geoms)
+    # 3. Apply convex_hull to the combined geometry.
+    # This transforms jagged raster borders into a simple, convex polygon.
+    # It dramatically speeds up the greedy set-cover intersection/union math.
+    return unary_union(geoms).convex_hull
 
 
 def build_tile_index(directory: Path, polarization: str) -> gpd.GeoDataFrame:
