@@ -12,7 +12,6 @@ from shapely.geometry import Polygon, box, LineString, Point
 from shapely.wkt import loads
 from shapely.ops import nearest_points, unary_union, linemerge
 from math import floor, ceil, sqrt, acos, degrees
-import pyflwdir
 
 
 # glob_params = Parameters()
@@ -1612,17 +1611,6 @@ class CulvertsSpecific:
             x = xmin
             y += block_size - overlap
         return geom_array
-
-
-class Hydro:
-    @staticmethod
-    def fill_depression_wang(dtm_array):
-        filled_dtm, d8 = pyflwdir.dem.fill_depressions(elevtn=dtm_array)
-        return filled_dtm
-
-    def flow_accumulation(d8):
-        flow_acc = pyflwdir.flow_accumulation(d8)
-        return flow_acc
 
 
 class MosaicRasters:

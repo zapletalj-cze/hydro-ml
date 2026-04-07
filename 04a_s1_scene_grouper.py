@@ -46,6 +46,7 @@ import json
 from pathlib import Path
 
 import geopandas as gpd
+import pandas as pd
 from osgeo import gdal
 from shapely import wkb
 from shapely.ops import unary_union
@@ -54,17 +55,17 @@ from shapely.ops import unary_union
 # CONFIG
 # ══════════════════════════════════════════════════════════════════════════════
 
-ASC_DIR  = Path(r'C:/data/processed/ascending')
-DESC_DIR = Path(r'C:/data/processed/descending')
-AOI_PATH = Path(r'C:/data/aoi/aoi.gpkg')
-OUT_DIR  = Path(r'C:/data/model')
+ASC_DIR  = Path(r'D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\sentinel1_data\processed\ascending')
+DESC_DIR = Path(r'D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\sentinel1_data\processed\descending')
+AOI_PATH = Path(r'D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\AOI_Poland.gpkg')
+OUT_DIR  = Path(r'D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\sentinel1_data\processed_selected')
 
 POLARIZATION     = 'VV'    # VV used for footprints; VH has identical extent
 EPSG             = 2180    # PL-1992 — hardcoded, consistent with pyroSAR output
 
 # A group is considered complete once its union covers this fraction of the AOI.
 # Scenes may individually cover any fraction.
-MIN_GROUP_COVERAGE = 0.80
+MIN_GROUP_COVERAGE = 0.93
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Scene collection
@@ -72,12 +73,15 @@ MIN_GROUP_COVERAGE = 0.80
 
 gdal.UseExceptions()
 
-
 def collect_scenes(directory: Path, polarization: str) -> list[Path]:
     """Returns sorted list of pyroSAR output GeoTIFFs for the given polarization."""
+    # Prefer calibrated products and include both sigma0 and gamma0 when present.
+    sigma = sorted(directory.glob(f'*_{polarization}_sigma0-elp.tif'))
+    gamma = sorted(directory.glob(f'*_{polarization}_gamma0-elp.tif'))
+    if sigma or gamma:
+        return sorted(set(sigma + gamma))
+
     for pattern in [
-        f'*_{polarization}_sigma0-elp.tif',
-        f'*_{polarization}_gamma0-elp.tif',
         f'*_{polarization}_grd_elp.tif',
         f'*{polarization}*.tif',
     ]:
@@ -101,6 +105,7 @@ def read_scene_footprint(path: Path):
     """
     # 1. Aggressive in-memory downsampling (2% of original size).
     # Nearest Neighbour is fastest and sufficient for NoData boundary detection.
+    print(f'  Reading footprint for {path.name}...')
     translate_opts = gdal.TranslateOptions(
         format="VRT", 
         widthPct=2.0, 
@@ -115,7 +120,7 @@ def read_scene_footprint(path: Path):
     # 2. Footprint creation over the downsized raster.
     # Keep maxPoints low since we will simplify it anyway.
     footprint_opts = gdal.FootprintOptions(
-        format='Memory',
+        format='MEM',
         maxPoints=20
     )
     vector_ds = gdal.Footprint('', vrt_ds, options=footprint_opts)
@@ -165,11 +170,13 @@ def build_tile_index(directory: Path, polarization: str) -> gpd.GeoDataFrame:
     for path in scenes:
         try:
             footprint_geom = read_scene_footprint(path)
-            records.append({
+            record = gpd.GeoDataFrame([{
                 'path':     str(path),
                 'name':     path.stem,
                 'geometry': footprint_geom,
-            })
+            }])
+            record.set_crs(epsg=EPSG, inplace=True)
+            records.append(record)
         except Exception as exc:
             print(f'  Warning: skipping {path.name} — {exc}')
             skipped += 1
@@ -177,7 +184,10 @@ def build_tile_index(directory: Path, polarization: str) -> gpd.GeoDataFrame:
     if skipped:
         print(f'  Skipped {skipped} scene(s) due to read errors.')
 
-    return gpd.GeoDataFrame(records, crs=f'EPSG:{EPSG}')
+    if not records:
+        return gpd.GeoDataFrame(columns=['path', 'name', 'geometry'], crs=f'EPSG:{EPSG}')
+
+    return gpd.GeoDataFrame(pd.concat(records, ignore_index=True), crs=f'EPSG:{EPSG}')
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -317,6 +327,7 @@ def process_direction(
     all_geoms    = list(tile_index.geometry)
     group_labels = ['unassigned'] * len(tile_index)
     group_dict: dict[str, list[str]] = {}
+    accepted_rows: list[int] = []
 
     for g_idx, row_indices in enumerate(groups):
         label  = f'grp_{g_idx:03d}'
@@ -326,9 +337,6 @@ def process_direction(
         paths  = tile_index.iloc[row_indices]['path'].tolist()
         
         if cov < MIN_GROUP_COVERAGE:
-            # Partial group — exclude from JSON and tile index
-            for i in row_indices:
-                group_labels[i] = 'excluded'
             print(
                 f'  {label} : ⚠  EXCLUDED (partial)  '
                 f'{cov * 100:5.1f}%  {len(paths):3d} scenes  '
@@ -338,6 +346,7 @@ def process_direction(
         else:
             for i in row_indices:
                 group_labels[i] = label
+            accepted_rows.extend(row_indices)
             group_dict[label] = paths
             print(
                 f'  {label} :    {cov * 100:5.1f}%  '
@@ -348,13 +357,13 @@ def process_direction(
 
     tile_index = tile_index.copy()
     tile_index['group'] = group_labels
+    tile_index = tile_index[tile_index['group'] != 'unassigned'].copy()
 
     # Overall coverage from all groups combined
-    all_assigned = [i for grp in groups for i in grp]
-    total_cov = coverage_fraction([all_geoms[i] for i in all_assigned], aoi_geom)
+    total_cov = coverage_fraction([all_geoms[i] for i in accepted_rows], aoi_geom)
     print(f'\n  Combined AOI coverage : {total_cov * 100:.1f}%')
     if total_cov < 0.99:
-        print(f'  ⚠  Coverage < 99% — possible gap in scene archive.')
+        print('  ⚠  Coverage < 99% — possible gap in scene archive.')
 
     return group_dict, tile_index
 
@@ -378,7 +387,7 @@ def main(dry_run: bool = False) -> None:
         group_dict, tile_index = process_direction(directory, direction, aoi_geom)
         all_groups[direction] = group_dict
 
-        gpkg_path = OUT_DIR / f'{direction}_tile_index.gpkg'
+        gpkg_path = OUT_DIR / f'{direction}_{POLARIZATION}_tile_index.gpkg'
         tile_index.to_file(gpkg_path, driver='GPKG', engine='pyogrio')
         print(f'  Footprint index -> {gpkg_path}')
 
