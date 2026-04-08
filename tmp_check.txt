@@ -1,0 +1,39 @@
+=== Cell 5 write_multiband_tiff ===
+def write_multiband_tiff(
+    path: Path,
+    arrays: list,
+    band_names: list,
+    geo_info: dict,
+    nodata: float = -9999.0,
+):
+    """
+    Writes a list of 2D arrays as a multiband GeoTIFF.
+    LZW compressed, multi-threaded, BigTIFF if needed.
+    NaN values replaced with nodata before writing.
+    """
+    nrows, ncols = arrays[0].shape
+    nbands = len(arrays)
+
+    driver = gdal.GetDriverByName('GTiff')
+    ds = driver.Create(
+        str(path), ncols, nrows, nbands, gdal.GDT_Float32,
+        options=[
+            'COMPRESS=LZW',
+            'PREDICTOR=2',
+            'NUM_THREADS=ALL_CPUS',
+            'BIGTIFF=IF_SAFER',
+            'TILED=YES',
+        ],
+    )
+    ds.SetGeoTrans
+
+Last 3 cells in git:
+  Cell 32 [code]: importance = model.feature_importances_
+sorted_idx = np.argsort(importance)[::-1]
+
+fig, ax = plt.sub
+  Cell 33 [markdown]: ---
+## Section 7 — Save Model and Metadata
+  Cell 34 [code]: import json
+from datetime import datetime
+from sklearn.metrics import average_precision_score, roc_a
