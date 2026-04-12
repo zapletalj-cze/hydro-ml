@@ -33,9 +33,9 @@ import pyproj
 # KONFIGURACE — UPRAV CESTY K DATŮM
 # =============================================================================
 
-BDOT_GPKG = r"C:\data\bdot10k_waly.gpkg"
-ICESAT2_GPKG = r"C:\data\icesat2_atl08_poland.gpkg"
-COPDEM_TIFF = r"C:\data\copdem_glo30.tif"  # tile pokrývající testovací oblast
+BDOT_GPKG = r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\levees_selection\OT_BUZM_L_Poland_files_selected.gpkg"
+ICESAT2_GPKG = r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sat_lidar\01_data\ICE_SAT\ATL08\atl08_terrain_heights.gpkg"
+COPDEM_TIFF = r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\COP_DSM\COP_DSM_Poland_2180_c.tif"  # tile pokrývající testovací oblast
 LIDAR_DTM = None  # volitelné: cesta k 1m DTM pro srovnání, None = přeskočit
 
 # testovací oblast — dolní Visla (Toruń–Grudziądz)

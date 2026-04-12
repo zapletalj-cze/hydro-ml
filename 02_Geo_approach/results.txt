@@ -1,0 +1,68 @@
+
+GATE TEST: Detekce hrází z Copernicus DSM
+============================================================
+Načítám BDOT10k hráze...
+  Počet features: 204964
+  CRS: EPSG:2180
+  Features v testovací oblasti: 1801
+
+Načítám Copernicus DSM...
+  Rozměr: (2230, 1345)
+  Elevace: 14.5 – 150.2 m
+  CRS: EPSG:2180
+
+============================================================
+TEST 1: Příčné profily DSM přes známé hráze
+============================================================
+
+Počet profilů: 20
+Prominence hráze v DSM:
+  Medián:  7.11 m
+  Průměr:  8.64 m
+  Min:     2.87 m
+  Max:     16.96 m
+  >1m:     100 %
+  >2m:     100 %
+  >3m:     95 %
+
+→ VERDIKT TESTU 1: GO
+  Hráze jsou v DSM viditelné, mediánová prominence > 1 m
+
+============================================================
+TEST 2: TPI vizualizace na různých radiusech
+============================================================
+  TPI r=3px (90m): mean=0.00, std=0.93, max=13.75
+  TPI r=5px (150m): mean=0.00, std=1.32, max=15.44
+  TPI r=7px (210m): mean=0.01, std=1.60, max=16.81
+  TPI r=10px (300m): mean=0.01, std=1.88, max=18.33
+
+→ Vizuální inspekce: gate_test_2_tpi.png
+  Otázka: 'Svítí' hráze (černé linie) v TPI mapách?
+
+============================================================
+TEST 3: ICESat-2 crossings přes hráze
+============================================================
+ICESat-2 bodů v testovací oblasti: 184234
+ICESat-2 sloupce: ['lat', 'lon', 'h_te_median', 'n_seg_ph', 'beam', 'granule', 'geometry']
+
+ICESat-2 body na hrázích (buffer 50m): 3546
+Celkem ICESat-2 bodů v oblasti: 184234
+Poměr: 1.92 %
+
+Elevační sloupec: h_te_median
+  Rozsah elevace na hrázích: 45.0 – 146.6 m
+
+→ VERDIKT TESTU 3: GO
+
+============================================================
+GATE TEST DOKONČEN
+============================================================
+
+Výstupy:
+  gate_test_1_profiles.png  — příčné profily DSM přes hráze
+  gate_test_2_tpi.png       — TPI vizualizace
+
+Další kroky:
+  1. Vizuálně zkontroluj profily — je prominence > 1m?
+  2. Zkontroluj TPI — 'svítí' hráze na nějakém radiusu?
+  3. Zkontroluj ICESat-2 — je dostatek crossings?
