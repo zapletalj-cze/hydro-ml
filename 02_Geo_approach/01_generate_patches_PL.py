@@ -33,6 +33,8 @@ from tqdm import tqdm
 BDOT_GPKG = r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\levees_selection\WalyNaspy.gpkg"
 MERIT_BASINS_SHP = r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\data\riv_pfaf_2x_MERIT_Hydro_v07_Basin_flip.gpkg"
 COPDEM_TIFF = r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\COP_DSM\COP_DSM_Poland_2180_c.tif"
+CANOPY_HEIGHT_TIFF = r"TODO: cesta k Canopy Height rastru pro PL"
+CANOPY_HEIGHT_SD_TIFF = r"TODO: cesta k Canopy Height SD rastru pro PL"
 
 OUTPUT_DIR = Path(
     r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\patches_v01"
@@ -410,6 +412,30 @@ def extract_all_dsm_patches(gdf_centers, dsm_path, patch_size_m, patch_size_px):
     return patches
 
 
+def extract_all_raster_patches(
+    valid_patch_ids, raster_path, channel_name, gdf_centers, patch_size_m, patch_size_px
+):
+    """
+    Extract patches from any single-band raster for all valid DSM patch centers.
+    Returns {patch_id: array} for patches present in valid_patch_ids.
+    """
+    result = {}
+    gdf_valid = gdf_centers[gdf_centers["patch_id"].isin(valid_patch_ids)]
+
+    with rasterio.open(raster_path) as src:
+        for _, row in tqdm(
+            gdf_valid.iterrows(),
+            total=len(gdf_valid),
+            desc=f"Extracting {channel_name} patches",
+        ):
+            cx, cy = row.geometry.x, row.geometry.y
+            data, _ = extract_dsm_window(src, cx, cy, patch_size_m, patch_size_px)
+            if data is not None:
+                result[row["patch_id"]] = data
+
+    return result
+
+
 # ============================================================
 # SECTION 9: Compute DSM derivatives (TPI)
 # ============================================================
@@ -430,11 +456,12 @@ def compute_patch_derivatives(dsm_patch, tpi_radii):
     return derivatives
 
 
-def compute_all_derivatives(dsm_patches, tpi_radii):
+def compute_all_derivatives(dsm_patches, tpi_radii, auxiliary_patches=None):
     """
     Apply derivative computation to all DSM patches.
     Returns a dict {patch_id: {channel_name: array}} including the
-    original DSM as 'dsm'.
+    original DSM as 'dsm'. Optional auxiliary_patches dict
+    {channel_name: {patch_id: array}} adds extra channels per patch.
     """
     result = {}
     for patch_id, (dsm_data, transform) in tqdm(
@@ -442,6 +469,12 @@ def compute_all_derivatives(dsm_patches, tpi_radii):
     ):
         channels = {"dsm": dsm_data}
         channels.update(compute_patch_derivatives(dsm_data, tpi_radii))
+
+        if auxiliary_patches:
+            for ch_name, patches_dict in auxiliary_patches.items():
+                if patch_id in patches_dict:
+                    channels[ch_name] = patches_dict[patch_id]
+
         result[patch_id] = {
             "channels": channels,
             "transform": transform,
@@ -623,8 +656,33 @@ if __name__ == "__main__":
         PATCH_SIZE_PX,
     )
 
+    # Section 8b: extract Canopy Height patches
+    canopy_height_patches = extract_all_raster_patches(
+        set(dsm_patches.keys()),
+        CANOPY_HEIGHT_TIFF,
+        "canopy_height",
+        gdf_all_centers,
+        PATCH_SIZE_M,
+        PATCH_SIZE_PX,
+    )
+    canopy_height_sd_patches = extract_all_raster_patches(
+        set(dsm_patches.keys()),
+        CANOPY_HEIGHT_SD_TIFF,
+        "canopy_height_sd",
+        gdf_all_centers,
+        PATCH_SIZE_M,
+        PATCH_SIZE_PX,
+    )
+
     # Section 9: compute derivatives
-    patches_with_features = compute_all_derivatives(dsm_patches, TPI_RADII_PX)
+    patches_with_features = compute_all_derivatives(
+        dsm_patches,
+        TPI_RADII_PX,
+        auxiliary_patches={
+            "canopy_height": canopy_height_patches,
+            "canopy_height_sd": canopy_height_sd_patches,
+        },
+    )
 
     # Section 10: rasterize labels
     patches_with_features = add_labels_to_patches(
