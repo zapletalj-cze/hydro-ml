@@ -15,6 +15,7 @@ Earthdata credentials — store in ~/.netrc:
 """
 
 import warnings
+
 warnings.filterwarnings(
     "ignore",
     message=".*DataGranule.size.*",
@@ -46,18 +47,19 @@ AOI_POLYGON = [
 # Alternatively load from file:
 # AOI_POLYGON = load_polygon_from_file("aoi.gpkg")
 
-DATE_RANGE = ("2019-01-01", "2025-12-31")   # full mission
-OUTPUT_DIR  = Path(r"C:\Computation\data\atl08_PL")
+DATE_RANGE = ("2019-01-01", "2025-12-31")  # full mission
+OUTPUT_DIR = Path(r"C:\Computation\data\atl08_PL")
 OUTPUT_GPKG = Path(r"C:\Computation\data\atl08_terrain_heights.gpkg")
 
-TERRAIN_VAR = "h_te_median"   # robust terrain height per 100m segment
-BEAMS       = ["gt1l", "gt1r", "gt2l", "gt2r", "gt3l", "gt3r"]
-MIN_PHOTONS = 5               # minimum photons per segment
+TERRAIN_VAR = "h_te_median"  # robust terrain height per 100m segment
+BEAMS = ["gt1l", "gt1r", "gt2l", "gt2r", "gt3l", "gt3r"]
+MIN_PHOTONS = 5  # minimum photons per segment
 
 
 # ---------------------------------------------------------------------------
 # HELPER
 # ---------------------------------------------------------------------------
+
 
 def load_polygon_from_file(path: str) -> list:
     gdf = gpd.read_file(path, engine="pyogrio").to_crs(epsg=4326)
@@ -75,6 +77,7 @@ def bbox_from_polygon(polygon: list) -> tuple:
 # ---------------------------------------------------------------------------
 # STEP 1: Search granules via earthaccess
 # ---------------------------------------------------------------------------
+
 
 def search_granules(polygon: list, date_range: tuple) -> list:
     print("Authenticating with NASA Earthdata...")
@@ -97,17 +100,16 @@ def search_granules(polygon: list, date_range: tuple) -> list:
 # STEP 2: Download granules
 # ---------------------------------------------------------------------------
 
+
 def download_granules(granules: list, output_dir: Path) -> list:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Skip already downloaded
     existing = {f.name for f in output_dir.glob("ATL08*.h5")}
     to_download = [
-        g for g in granules
-        if not any(
-            link.split("/")[-1] in existing
-            for link in g.data_links()
-        )
+        g
+        for g in granules
+        if not any(link.split("/")[-1] in existing for link in g.data_links())
     ]
 
     if not to_download:
@@ -122,6 +124,7 @@ def download_granules(granules: list, output_dir: Path) -> list:
 # ---------------------------------------------------------------------------
 # STEP 3: Extract terrain heights
 # ---------------------------------------------------------------------------
+
 
 def extract_terrain_heights(h5_path: Path, aoi_polygon: Polygon) -> list:
     records = []
@@ -143,25 +146,23 @@ def extract_terrain_heights(h5_path: Path, aoi_polygon: Polygon) -> list:
                 continue
 
             try:
-                lat  = land_seg["latitude"][:]
-                lon  = land_seg["longitude"][:]
-                h_te = terrain[TERRAIN_VAR][:]    # <-- terrain/ subgroup
+                lat = land_seg["latitude"][:]
+                lon = land_seg["longitude"][:]
+                h_te = terrain[TERRAIN_VAR][:]  # <-- terrain/ subgroup
                 n_ph = land_seg["n_seg_ph"][:]
-                snr  = land_seg["snr"][:]
+                snr = land_seg["snr"][:]
             except KeyError as e:
                 print(f"  Warning: missing variable in {beam}: {e}")
                 continue
 
             # Quality filter
             valid = (
-                (np.abs(h_te) < 1e10) &   # exclude fill values (~3.4e38)
-                (n_ph >= MIN_PHOTONS) &    # minimum photon count
-                (snr > 0)                  # positive SNR
+                (np.abs(h_te) < 1e10)  # exclude fill values (~3.4e38)
+                & (n_ph >= MIN_PHOTONS)  # minimum photon count
+                & (snr > 0)  # positive SNR
             )
 
-            lat, lon, h_te, n_ph = (
-                lat[valid], lon[valid], h_te[valid], n_ph[valid]
-            )
+            lat, lon, h_te, n_ph = (lat[valid], lon[valid], h_te[valid], n_ph[valid])
 
             if len(lat) == 0:
                 continue
@@ -174,14 +175,16 @@ def extract_terrain_heights(h5_path: Path, aoi_polygon: Polygon) -> list:
             inside = pts.within(aoi_polygon)
 
             for i in np.where(inside)[0]:
-                records.append({
-                    "lat":        float(lat[i]),
-                    "lon":        float(lon[i]),
-                    TERRAIN_VAR:  float(h_te[i]),
-                    "n_seg_ph":   int(n_ph[i]),
-                    "beam":       beam,
-                    "granule":    granule_name,
-                })
+                records.append(
+                    {
+                        "lat": float(lat[i]),
+                        "lon": float(lon[i]),
+                        TERRAIN_VAR: float(h_te[i]),
+                        "n_seg_ph": int(n_ph[i]),
+                        "beam": beam,
+                        "granule": granule_name,
+                    }
+                )
 
     return records
 
@@ -189,6 +192,7 @@ def extract_terrain_heights(h5_path: Path, aoi_polygon: Polygon) -> list:
 # ---------------------------------------------------------------------------
 # STEP 4: Build GeoDataFrame and save
 # ---------------------------------------------------------------------------
+
 
 def build_geodataframe(records: list) -> gpd.GeoDataFrame:
     if not records:
@@ -204,6 +208,7 @@ def build_geodataframe(records: list) -> gpd.GeoDataFrame:
 # ---------------------------------------------------------------------------
 # MAIN
 # ---------------------------------------------------------------------------
+
 
 def main():
     aoi_polygon = Polygon(AOI_POLYGON)

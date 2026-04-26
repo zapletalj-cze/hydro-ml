@@ -14,6 +14,7 @@ Prerekvizity:
 """
 
 import warnings
+
 warnings.filterwarnings("ignore")
 
 from pathlib import Path
@@ -43,10 +44,10 @@ BBOX_WGS84 = (18.4, 52.9, 19.0, 53.5)
 
 # parametry
 PROFILE_LENGTH_M = 800  # délka příčného profilu na každou stranu od hráze
-PROFILE_STEP_M = 10     # krok vzorkování podél profilu
-N_PROFILES = 20         # počet profilů k vizualizaci
+PROFILE_STEP_M = 10  # krok vzorkování podél profilu
+N_PROFILES = 20  # počet profilů k vizualizaci
 TPI_RADII_PX = [3, 5, 7, 10]  # TPI radiusy v pixelech (× 30m = 90–300 m)
-LEVEE_BUFFER_M = 50     # buffer kolem hráze pro ICESat-2 matching
+LEVEE_BUFFER_M = 50  # buffer kolem hráze pro ICESat-2 matching
 
 
 def load_dsm_window(dsm_path, bbox_wgs84):
@@ -65,12 +66,12 @@ def load_dsm_window(dsm_path, bbox_wgs84):
 
 
 def compute_tpi(dem, radius_px):
-    mean_elev = uniform_filter(dem, size=2 * radius_px + 1, mode='nearest')
+    mean_elev = uniform_filter(dem, size=2 * radius_px + 1, mode="nearest")
     return dem - mean_elev
 
 
 def compute_relative_elevation(dem, radius_px):
-    min_elev = minimum_filter(dem, size=2 * radius_px + 1, mode='nearest')
+    min_elev = minimum_filter(dem, size=2 * radius_px + 1, mode="nearest")
     return dem - min_elev
 
 
@@ -114,6 +115,7 @@ def reproject_gdf(gdf, target_crs):
 # TEST 1: PROFILY DSM PŘES ZNÁMÉ HRÁZE
 # =============================================================================
 
+
 def test_1_profiles(dsm_data, dsm_transform, dsm_crs, levees_gdf):
     print("\n" + "=" * 60)
     print("TEST 1: Příčné profily DSM přes známé hráze")
@@ -122,7 +124,9 @@ def test_1_profiles(dsm_data, dsm_transform, dsm_crs, levees_gdf):
     levees = reproject_gdf(levees_gdf, dsm_crs)
 
     fig, axes = plt.subplots(4, 5, figsize=(20, 12))
-    fig.suptitle("Příčné profily Copernicus DSM přes známé hráze (BDOT10k)", fontsize=14)
+    fig.suptitle(
+        "Příčné profily Copernicus DSM přes známé hráze (BDOT10k)", fontsize=14
+    )
     axes = axes.flatten()
 
     profile_count = 0
@@ -132,7 +136,7 @@ def test_1_profiles(dsm_data, dsm_transform, dsm_crs, levees_gdf):
         geom = row.geometry
         if geom is None or geom.is_empty:
             continue
-        if geom.geom_type == 'MultiLineString':
+        if geom.geom_type == "MultiLineString":
             geom = list(geom.geoms)[0]
         if geom.length < PROFILE_LENGTH_M:
             continue
@@ -157,8 +161,16 @@ def test_1_profiles(dsm_data, dsm_transform, dsm_crs, levees_gdf):
             center_idx = len(elevations) // 2
             center_elev = elevations[center_idx]
             margin = 5
-            left_min = np.nanmin(elevations[:center_idx - margin]) if center_idx > margin else np.nan
-            right_min = np.nanmin(elevations[center_idx + margin:]) if center_idx + margin < len(elevations) else np.nan
+            left_min = (
+                np.nanmin(elevations[: center_idx - margin])
+                if center_idx > margin
+                else np.nan
+            )
+            right_min = (
+                np.nanmin(elevations[center_idx + margin :])
+                if center_idx + margin < len(elevations)
+                else np.nan
+            )
             surrounding_min = np.nanmin([left_min, right_min])
             prominence = center_elev - surrounding_min
 
@@ -166,8 +178,8 @@ def test_1_profiles(dsm_data, dsm_transform, dsm_crs, levees_gdf):
                 prominences.append(prominence)
 
             ax = axes[profile_count]
-            ax.plot(distances, elevations, 'b-', linewidth=1)
-            ax.axvline(0, color='r', linestyle='--', linewidth=1, label='hráz')
+            ax.plot(distances, elevations, "b-", linewidth=1)
+            ax.axvline(0, color="r", linestyle="--", linewidth=1, label="hráz")
             ax.set_title(f"P{profile_count + 1}: Δh={prominence:.1f}m", fontsize=9)
             ax.set_xlabel("m")
             ax.set_ylabel("m n.m.")
@@ -209,6 +221,7 @@ def test_1_profiles(dsm_data, dsm_transform, dsm_crs, levees_gdf):
 # TEST 2: TPI NA RŮZNÝCH RADIUSECH
 # =============================================================================
 
+
 def test_2_tpi(dsm_data, dsm_transform, dsm_crs, levees_gdf):
     print("\n" + "=" * 60)
     print("TEST 2: TPI vizualizace na různých radiusech")
@@ -235,19 +248,19 @@ def test_2_tpi(dsm_data, dsm_transform, dsm_crs, levees_gdf):
 
     extent = [view_bounds[0], view_bounds[2], view_bounds[1], view_bounds[3]]
 
-    axes[0].imshow(dsm_crop, extent=extent, cmap='terrain', origin='upper')
+    axes[0].imshow(dsm_crop, extent=extent, cmap="terrain", origin="upper")
     axes[0].set_title("Copernicus DSM")
 
     for levee_geom in levees.geometry:
         if levee_geom is None:
             continue
-        if levee_geom.geom_type == 'MultiLineString':
+        if levee_geom.geom_type == "MultiLineString":
             for part in levee_geom.geoms:
                 xs, ys = part.xy
-                axes[0].plot(xs, ys, 'r-', linewidth=0.8)
+                axes[0].plot(xs, ys, "r-", linewidth=0.8)
         else:
             xs, ys = levee_geom.xy
-            axes[0].plot(xs, ys, 'r-', linewidth=0.8)
+            axes[0].plot(xs, ys, "r-", linewidth=0.8)
 
     best_radius = None
     best_contrast = 0
@@ -257,40 +270,44 @@ def test_2_tpi(dsm_data, dsm_transform, dsm_crs, levees_gdf):
         vmax = np.nanpercentile(np.abs(tpi), 98)
 
         ax = axes[i + 1]
-        ax.imshow(tpi, extent=extent, cmap='RdBu_r', vmin=-vmax, vmax=vmax, origin='upper')
+        ax.imshow(
+            tpi, extent=extent, cmap="RdBu_r", vmin=-vmax, vmax=vmax, origin="upper"
+        )
         ax.set_title(f"TPI r={radius}px ({radius * 30}m)")
 
         for levee_geom in levees.geometry:
             if levee_geom is None:
                 continue
-            if levee_geom.geom_type == 'MultiLineString':
+            if levee_geom.geom_type == "MultiLineString":
                 for part in levee_geom.geoms:
                     xs, ys = part.xy
-                    ax.plot(xs, ys, 'k-', linewidth=0.8)
+                    ax.plot(xs, ys, "k-", linewidth=0.8)
             else:
                 xs, ys = levee_geom.xy
-                ax.plot(xs, ys, 'k-', linewidth=0.8)
+                ax.plot(xs, ys, "k-", linewidth=0.8)
 
-        print(f"  TPI r={radius}px ({radius * 30}m): "
-              f"mean={np.nanmean(tpi):.2f}, std={np.nanstd(tpi):.2f}, "
-              f"max={np.nanmax(tpi):.2f}")
+        print(
+            f"  TPI r={radius}px ({radius * 30}m): "
+            f"mean={np.nanmean(tpi):.2f}, std={np.nanstd(tpi):.2f}, "
+            f"max={np.nanmax(tpi):.2f}"
+        )
 
     rel_elev = compute_relative_elevation(dsm_crop, 5)
     ax = axes[len(TPI_RADII_PX) + 1]
     vmax = np.nanpercentile(rel_elev, 98)
-    ax.imshow(rel_elev, extent=extent, cmap='hot_r', vmin=0, vmax=vmax, origin='upper')
+    ax.imshow(rel_elev, extent=extent, cmap="hot_r", vmin=0, vmax=vmax, origin="upper")
     ax.set_title("Relative elevation (r=5px)")
 
     for levee_geom in levees.geometry:
         if levee_geom is None:
             continue
-        if levee_geom.geom_type == 'MultiLineString':
+        if levee_geom.geom_type == "MultiLineString":
             for part in levee_geom.geoms:
                 xs, ys = part.xy
-                ax.plot(xs, ys, 'cyan', linewidth=0.8)
+                ax.plot(xs, ys, "cyan", linewidth=0.8)
         else:
             xs, ys = levee_geom.xy
-            ax.plot(xs, ys, 'cyan', linewidth=0.8)
+            ax.plot(xs, ys, "cyan", linewidth=0.8)
 
     plt.tight_layout()
     plt.savefig("gate_test_2_tpi.png", dpi=150)
@@ -303,6 +320,7 @@ def test_2_tpi(dsm_data, dsm_transform, dsm_crs, levees_gdf):
 # =============================================================================
 # TEST 3: ICESat-2 CROSSINGS
 # =============================================================================
+
 
 def test_3_icesat2(levees_gdf, icesat2_path, bbox_wgs84):
     print("\n" + "=" * 60)
@@ -334,21 +352,29 @@ def test_3_icesat2(levees_gdf, icesat2_path, bbox_wgs84):
     levee_buffer = levees_utm.buffer(LEVEE_BUFFER_M)
     levee_buffer_gdf = gpd.GeoDataFrame(geometry=levee_buffer, crs=utm_crs)
 
-    crossings = gpd.sjoin(icesat2_utm, levee_buffer_gdf, predicate='within')
+    crossings = gpd.sjoin(icesat2_utm, levee_buffer_gdf, predicate="within")
 
     print(f"\nICESat-2 body na hrázích (buffer {LEVEE_BUFFER_M}m): {len(crossings)}")
     print(f"Celkem ICESat-2 bodů v oblasti: {len(icesat2)}")
     print(f"Poměr: {len(crossings) / max(len(icesat2), 1) * 100:.2f} %")
 
     h_col = None
-    for candidate in ['h_te_mean', 'h_mean_canopy', 'h_te_best_fit', 'elevation', 'h_te_median']:
+    for candidate in [
+        "h_te_mean",
+        "h_mean_canopy",
+        "h_te_best_fit",
+        "elevation",
+        "h_te_median",
+    ]:
         if candidate in crossings.columns:
             h_col = candidate
             break
 
     if h_col and len(crossings) > 0:
         print(f"\nElevační sloupec: {h_col}")
-        print(f"  Rozsah elevace na hrázích: {crossings[h_col].min():.1f} – {crossings[h_col].max():.1f} m")
+        print(
+            f"  Rozsah elevace na hrázích: {crossings[h_col].min():.1f} – {crossings[h_col].max():.1f} m"
+        )
 
     if len(crossings) > 100:
         verdict = "GO"
@@ -365,6 +391,7 @@ def test_3_icesat2(levees_gdf, icesat2_path, bbox_wgs84):
 # =============================================================================
 # MAIN
 # =============================================================================
+
 
 def main():
     print("GATE TEST: Detekce hrází z Copernicus DSM")
