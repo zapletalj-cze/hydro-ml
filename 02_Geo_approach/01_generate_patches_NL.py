@@ -33,11 +33,11 @@ from tqdm import tqdm
 LEVEES_GPKG = r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\levees_selection\NL_Levees_p01.gpkg"
 MERIT_BASINS_SHP = r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\data\riv_pfaf_2x_MERIT_Hydro_v07_Basin_flip.gpkg"
 COPDEM_TIFF = r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\COP_DSM\COP_DSM_Netherlands_3035.tif"
-CANOPY_HEIGHT_TIFF = r"TODO: cesta k Canopy Height rastru pro NL"
-CANOPY_HEIGHT_SD_TIFF = r"TODO: cesta k Canopy Height SD rastru pro NL"
+CANOPY_HEIGHT_TIFF = r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\data\CanopyHeight\Netherlands\reprojected\ETH_GlobalCanopyHeight_10m_2020_Netherlands_Map.tif"
+CANOPY_HEIGHT_SD_TIFF = r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\data\CanopyHeight\Netherlands\reprojected\ETH_GlobalCanopyHeight_10m_2020_Netherlands_Map_SD.tif"
 
 OUTPUT_DIR = Path(
-    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\patches_v01"
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\patches_v01_NL"
 )
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
