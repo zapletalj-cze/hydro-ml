@@ -44,17 +44,21 @@ from functools import partial
 # CONFIGURATION
 # ---------------------------------------------------------------------------
 
-RAW_DIR     = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\sentinel1_data\raw")
-OUTPUT_BASE = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\sentinel1_data\processed")
+RAW_DIR = Path(
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\sentinel1_data\raw"
+)
+OUTPUT_BASE = Path(
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\sentinel1_data\processed"
+)
 EXTERNAL_DEM = r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\COP_DSM\COP_DSM_Poland_4326_c.tif"
 # Processing parameters
-RESOLUTION   = 10                       # output pixel spacing in metres
-T_SRS        = 2180                     # EPSG:2180 - PL-1992, consistent with BDOT10k
+RESOLUTION = 10  # output pixel spacing in metres
+T_SRS = 2180  # EPSG:2180 - PL-1992, consistent with BDOT10k
 POLARIZATIONS = ["VV", "VH"]
-DEM_NAME     = "None"
-SCALING      = "linear"                 # linear units for correct temporal averaging
-                                        # dB conversion done later in Python
-N_JOBS       = 16                        # number of parallel scenes
+DEM_NAME = "None"
+SCALING = "linear"  # linear units for correct temporal averaging
+# dB conversion done later in Python
+N_JOBS = 16  # number of parallel scenes
 
 # ---------------------------------------------------------------------------
 # LOGGING
@@ -72,6 +76,7 @@ log = logging.getLogger(__name__)
 # PROCESSING FUNCTION (runs in each worker process)
 # ---------------------------------------------------------------------------
 
+
 def process_scene(scene_path: Path, output_dir: Path) -> dict:
     """
     Processes a single Sentinel-1 GRD scene using pyroSAR geocode().
@@ -79,9 +84,9 @@ def process_scene(scene_path: Path, output_dir: Path) -> dict:
     Returns dict with scene name, status and error message if failed.
     """
     result = {
-        "scene":  scene_path.name,
+        "scene": scene_path.name,
         "status": "failed",
-        "error":  None,
+        "error": None,
     }
 
     try:
@@ -93,24 +98,18 @@ def process_scene(scene_path: Path, output_dir: Path) -> dict:
         geocode(
             infile=str(scene_path),
             outdir=str(output_dir),
-
             # Output projection - EPSG:2180 (PL-1992)
             # Consistent with BDOT10k ground truth vectors
             t_srs=T_SRS,
-
             # Pixel spacing in metres - preserves native GRD resolution
             spacing=RESOLUTION,
-
             # Polarizations
             polarizations=POLARIZATIONS,
-
             # Output scaling: linear (not dB) for correct temporal averaging
             # dB conversion applied later in Python after multi-temporal averaging
             scaling=SCALING,
-
             # Geocoding method
             geocoding_type="Range-Doppler",
-
             # DEM - Copernicus 30m, more accurate than SRTM for Poland
             demName=DEM_NAME,
             demResamplingMethod="BILINEAR_INTERPOLATION",
@@ -118,36 +117,27 @@ def process_scene(scene_path: Path, output_dir: Path) -> dict:
             externalDEMFile=EXTERNAL_DEM,
             externalDEMNoDataValue=0,
             externalDEMApplyEGM=True,
-
             # Preprocessing steps
             removeS1BorderNoise=True,
             removeS1BorderNoiseMethod="pyroSAR",  # improved border noise removal
             removeS1ThermalNoise=True,
-
             # Orbit files - allow Restituted as fallback to avoid timeout
             allow_RES_OSV=True,
-
             # terrainFlattening=False → sigma0 with ellipsoid correction (elp)
             # terrainFlattening=True  → gamma0 with radiometric terrain correction (rtc)
             # sigma0 is correct for flat terrain (Polish lowlands)
             terrainFlattening=False,
-
             # Speckle filter disabled - suppression via multi-temporal averaging
             speckleFilter=False,
-
             # groupsize=1: execute each node separately
             # reduces memory usage and improves stability
             groupsize=1,
-
             # Mask sea with nodata
             nodataValueAtSea=True,
-
             # Align pixels across scenes for consistent time series
             alignToStandardGrid=True,
-            standardGridOriginX=169520, # snap to Poland FL MODEL
-            standardGridOriginY=777170, # snap to Poland FL MODEL
-
-
+            standardGridOriginX=169520,  # snap to Poland FL MODEL
+            standardGridOriginY=777170,  # snap to Poland FL MODEL
             # Cleanup temporary files after processing
             cleanup=True,
         )
@@ -166,6 +156,7 @@ def process_scene(scene_path: Path, output_dir: Path) -> dict:
 # ---------------------------------------------------------------------------
 # DIRECTORY PROCESSING
 # ---------------------------------------------------------------------------
+
 
 def collect_scenes(input_dir: Path, output_dir: Path) -> list:
     """
@@ -226,7 +217,12 @@ def process_directory(
         log.info(f"[DRY-RUN] Would process {len(scenes)} scenes with {n_jobs} workers")
         for s in scenes:
             log.info(f"  {s.name}")
-        return {"total": len(scenes), "success": 0, "failed": 0, "skipped": skipped_count}
+        return {
+            "total": len(scenes),
+            "success": 0,
+            "failed": 0,
+            "skipped": skipped_count,
+        }
 
     log.info(f"Processing {len(scenes)} scenes with {n_jobs} parallel workers")
 
@@ -243,12 +239,12 @@ def process_directory(
                 log.error(f"       {result['error']}")
 
     success = sum(1 for r in results if r["status"] == "success")
-    failed  = sum(1 for r in results if r["status"] == "failed")
+    failed = sum(1 for r in results if r["status"] == "failed")
 
     return {
-        "total":   len(scenes),
+        "total": len(scenes),
         "success": success,
-        "failed":  failed,
+        "failed": failed,
         "skipped": skipped_count,
     }
 
@@ -257,29 +253,39 @@ def process_directory(
 # MAIN
 # ---------------------------------------------------------------------------
 
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Parallel Sentinel-1 GRD preprocessing with pyroSAR"
     )
     parser.add_argument(
-        "--raw-dir", type=Path, default=RAW_DIR,
-        help=f"Root directory containing ascending/ and descending/ subdirs (default: {RAW_DIR})"
+        "--raw-dir",
+        type=Path,
+        default=RAW_DIR,
+        help=f"Root directory containing ascending/ and descending/ subdirs (default: {RAW_DIR})",
     )
     parser.add_argument(
-        "--output-dir", type=Path, default=OUTPUT_BASE,
-        help=f"Output root directory (default: {OUTPUT_BASE})"
+        "--output-dir",
+        type=Path,
+        default=OUTPUT_BASE,
+        help=f"Output root directory (default: {OUTPUT_BASE})",
     )
     parser.add_argument(
-        "--orbit", choices=["ASC", "DESC", "BOTH"], default="BOTH",
-        help="Orbit direction to process (default: BOTH)"
+        "--orbit",
+        choices=["ASC", "DESC", "BOTH"],
+        default="BOTH",
+        help="Orbit direction to process (default: BOTH)",
     )
     parser.add_argument(
-        "--jobs", type=int, default=N_JOBS,
-        help=f"Number of parallel scenes (default: {N_JOBS})"
+        "--jobs",
+        type=int,
+        default=N_JOBS,
+        help=f"Number of parallel scenes (default: {N_JOBS})",
     )
     parser.add_argument(
-        "--dry-run", action="store_true",
-        help="List scenes to process without executing"
+        "--dry-run",
+        action="store_true",
+        help="List scenes to process without executing",
     )
     return parser.parse_args()
 
@@ -303,6 +309,7 @@ def main():
     # Verify pyroSAR is available
     try:
         import pyroSAR
+
         log.info(f"pyroSAR:    {pyroSAR.__version__}")
     except ImportError:
         log.error("pyroSAR not installed. Run: pip install pyrosar spatialist")
@@ -312,11 +319,13 @@ def main():
 
     orbits = []
     if args.orbit in ("ASC", "BOTH"):
-        orbits.append(("ASCENDING", args.raw_dir / "ascending",
-                       args.output_dir / "ascending"))
+        orbits.append(
+            ("ASCENDING", args.raw_dir / "ascending", args.output_dir / "ascending")
+        )
     if args.orbit in ("DESC", "BOTH"):
-        orbits.append(("DESCENDING", args.raw_dir / "descending",
-                       args.output_dir / "descending"))
+        orbits.append(
+            ("DESCENDING", args.raw_dir / "descending", args.output_dir / "descending")
+        )
 
     for label, input_dir, output_dir in orbits:
         stats = process_directory(

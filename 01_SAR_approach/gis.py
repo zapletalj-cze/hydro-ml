@@ -13,7 +13,6 @@ from shapely.wkt import loads
 from shapely.ops import nearest_points, unary_union, linemerge
 from math import floor, ceil, sqrt, acos, degrees
 
-
 # glob_params = Parameters()
 gdal.UseExceptions()
 gdal.SetCacheMax(4 * pow(1024, 3))
@@ -997,7 +996,7 @@ class Vector:
         """
         Load vector file to GeoDataFrame. Supports parquet files and OGR-supported formats.
         If multiple layers exist and no specific layer is requested, loads all layers into one GeoDataFrame.
-        
+
         :param path: Path to vector file
         :param bbox: Optional bounding box tuple (xmin, ymin, xmax, ymax)
         :param layer: Optional specific layer name to load
@@ -1016,10 +1015,10 @@ class Vector:
                 ds = ogr.Open(path)
                 if ds is None:
                     raise FileNotFoundError(f"Could not open file: {path}")
-                
+
                 layer_count = ds.GetLayerCount()
                 layers_to_load = []
-                
+
                 # Determine which layers to load
                 if layer is not None:
                     # Load only the specified layer
@@ -1029,29 +1028,33 @@ class Vector:
                     layers_to_load = [layer]
                 else:
                     # Load all available layers
-                    layers_to_load = [ds.GetLayer(i).GetName() for i in range(layer_count)]
-                
+                    layers_to_load = [
+                        ds.GetLayer(i).GetName() for i in range(layer_count)
+                    ]
+
                 # Load each layer using geopandas
                 gdfs = []
                 for lyr_name in layers_to_load:
                     try:
                         if bbox:
-                            gdf = gpd.read_file(path, layer=lyr_name, engine="pyogrio", bbox=tuple(bbox))
+                            gdf = gpd.read_file(
+                                path, layer=lyr_name, engine="pyogrio", bbox=tuple(bbox)
+                            )
                         else:
                             gdf = gpd.read_file(path, layer=lyr_name, engine="pyogrio")
-                        
+
                         if not gdf.empty:
                             gdfs.append(gdf)
                     except Exception as e:
                         print(f"Unable to load layer '{lyr_name}' from {path}: {e}")
                         continue
-                
+
                 ds = None  # Close the datasource
-                
+
                 if not gdfs:
                     print(f"No layers could be loaded from {path}")
                     return None
-                
+
                 # Combine all layers into a single geodataframe
                 if len(gdfs) == 1:
                     return gdfs[0]
@@ -1061,10 +1064,10 @@ class Vector:
                     for i, gdf in enumerate(gdfs[1:], 1):
                         if gdf.crs != target_crs:
                             gdfs[i] = gdf.to_crs(target_crs)
-                    
+
                     combined_gdf = pd.concat(gdfs, ignore_index=True)
                     return combined_gdf
-            
+
             except Exception as e:
                 print(f"Unable to load {path} to GeoDataFrame: {e}")
                 return None
@@ -1716,7 +1719,7 @@ class MosaicRasters:
             except (TypeError, ValueError):
                 pass
             # Cast nodata to the array's dtype so float32 == float64 works
-            mask |= (arr == arr.dtype.type(nodata_val))
+            mask |= arr == arr.dtype.type(nodata_val)
         return mask
 
     def _get_max_extent(self):
@@ -2118,10 +2121,14 @@ class MosaicRasters:
 
                 ## comparing if array already written is smaller or not
                 array_src = band.ReadAsArray(0, 0, cols, rows)
-                array_src = np.where(self._is_nodata(array_src, no_data_src), 0, array_src)
+                array_src = np.where(
+                    self._is_nodata(array_src, no_data_src), 0, array_src
+                )
 
                 array_dst = band_dst.ReadAsArray(locx, locy, cols, rows)
-                array_dst = np.where(self._is_nodata(array_dst, no_data_dst), 0, array_dst)
+                array_dst = np.where(
+                    self._is_nodata(array_dst, no_data_dst), 0, array_dst
+                )
                 ## if DEST raster has data
                 array_to_write = array_dst + array_src
                 array_to_write = np.where(

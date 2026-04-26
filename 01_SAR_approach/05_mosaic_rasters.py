@@ -7,7 +7,12 @@ import os
 TILEINDEX_ROOT = r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\sentinel1_data\processed_selected"
 AOI = r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\AOI_Poland.gpkg"
 SNAP_RASTER = r"B:\01_Projects\154_Poland_Flood_v3\01_MD\01_HAZARD\00_GIS\01_SnapRaster\SnapRaster_PL_10m_2180.tif"
-files = ["asc_VV_tile_index.gpkg", "desc_VV_tile_index.gpkg", "asc_VH_tile_index.gpkg", "desc_VH_tile_index.gpkg"]
+files = [
+    "asc_VV_tile_index.gpkg",
+    "desc_VV_tile_index.gpkg",
+    "asc_VH_tile_index.gpkg",
+    "desc_VH_tile_index.gpkg",
+]
 CELL_SIZE = 10
 EPSG = 2180
 
@@ -75,8 +80,12 @@ for file in files:
                 vsimem_path = f"/vsimem/warped_{group}_{asc_desc}_{specifics}_{idx}.tif"
 
                 # Prepare bounds: convert (xmin, xmax, ymin, ymax) to (minx, miny, maxx, maxy)
-                bounds = (extent_aoi_snapped[0], extent_aoi_snapped[2], 
-                         extent_aoi_snapped[1], extent_aoi_snapped[3])
+                bounds = (
+                    extent_aoi_snapped[0],
+                    extent_aoi_snapped[2],
+                    extent_aoi_snapped[1],
+                    extent_aoi_snapped[3],
+                )
 
                 # Clip by AOI and snap to extent bounds
                 warp_options = gdal.WarpOptions(
@@ -89,7 +98,7 @@ for file in files:
                     outputBounds=bounds,
                     srcNodata=raster_nodata,
                     dstNodata=nodata,
-                    outputType=data_type
+                    outputType=data_type,
                 )
                 gdal.Warp(vsimem_path, ds_in, options=warp_options)
                 ds_in = None

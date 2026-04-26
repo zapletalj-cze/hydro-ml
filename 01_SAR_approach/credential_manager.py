@@ -31,16 +31,17 @@ else:
 
 # OAuth client credentials (for catalogue search)
 CREDENTIALS_OAUTH_FILE = os.path.join(BASE_DIR, "oauth_cr.json")
-KEY_OAUTH_FILE         = os.path.join(BASE_DIR, "oauth_cr.key")
+KEY_OAUTH_FILE = os.path.join(BASE_DIR, "oauth_cr.key")
 
 # S3 credentials (for download – no 2FA required)
-CREDENTIALS_S3_FILE    = os.path.join(BASE_DIR, "s3_cr.json")
-KEY_S3_FILE            = os.path.join(BASE_DIR, "s3_cr.key")
+CREDENTIALS_S3_FILE = os.path.join(BASE_DIR, "s3_cr.json")
+KEY_S3_FILE = os.path.join(BASE_DIR, "s3_cr.key")
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 def _ensure_dir():
     os.makedirs(BASE_DIR, exist_ok=True)
@@ -99,6 +100,7 @@ def _delete(cred_file: str, key_file: str):
 # OAuth client credentials (catalogue search)
 # ---------------------------------------------------------------------------
 
+
 def get_oauth_credentials() -> tuple:
     """
     Returns (client_id, client_secret).
@@ -113,7 +115,7 @@ def get_oauth_credentials() -> tuple:
     if client_id and client_secret:
         use_stored = messagebox.askyesno(
             "OAuth credentials found",
-            f"Use stored OAuth client?\nClient ID: {client_id[:20]}..."
+            f"Use stored OAuth client?\nClient ID: {client_id[:20]}...",
         )
         if not use_stored:
             _delete(CREDENTIALS_OAUTH_FILE, KEY_OAUTH_FILE)
@@ -123,15 +125,19 @@ def get_oauth_credentials() -> tuple:
         messagebox.showinfo(
             "OAuth credentials",
             "Create an OAuth client at:\nhttps://shapps.dataspace.copernicus.eu/dashboard/\n\n"
-            "Then enter Client ID and Client Secret below."
+            "Then enter Client ID and Client Secret below.",
         )
-        client_id     = simpledialog.askstring("OAuth", "Enter Client ID:")
-        client_secret = simpledialog.askstring("OAuth", "Enter Client Secret:", show="*")
+        client_id = simpledialog.askstring("OAuth", "Enter Client ID:")
+        client_secret = simpledialog.askstring(
+            "OAuth", "Enter Client Secret:", show="*"
+        )
 
         if client_id and client_secret:
             _save(client_id, client_secret, CREDENTIALS_OAUTH_FILE, KEY_OAUTH_FILE)
         else:
-            messagebox.showwarning("Failed", "Both Client ID and Client Secret are required.")
+            messagebox.showwarning(
+                "Failed", "Both Client ID and Client Secret are required."
+            )
             root.destroy()
             return None, None
 
@@ -142,6 +148,7 @@ def get_oauth_credentials() -> tuple:
 # ---------------------------------------------------------------------------
 # S3 credentials (download – no 2FA issue)
 # ---------------------------------------------------------------------------
+
 
 def get_s3_credentials() -> tuple:
     """
@@ -160,7 +167,7 @@ def get_s3_credentials() -> tuple:
     if access_key and secret_key:
         use_stored = messagebox.askyesno(
             "S3 credentials found",
-            f"Use stored S3 credentials?\nAccess key: {access_key[:20]}..."
+            f"Use stored S3 credentials?\nAccess key: {access_key[:20]}...",
         )
         if not use_stored:
             _delete(CREDENTIALS_S3_FILE, KEY_S3_FILE)
@@ -170,7 +177,7 @@ def get_s3_credentials() -> tuple:
         messagebox.showinfo(
             "S3 credentials",
             "Generate S3 credentials at:\nhttps://eodata-iam.dataspace.copernicus.eu\n\n"
-            "Login → Generate credentials → copy Access Key and Secret Key."
+            "Login → Generate credentials → copy Access Key and Secret Key.",
         )
         access_key = simpledialog.askstring("S3", "Enter Access Key:")
         secret_key = simpledialog.askstring("S3", "Enter Secret Key:", show="*")
@@ -178,7 +185,9 @@ def get_s3_credentials() -> tuple:
         if access_key and secret_key:
             _save(access_key, secret_key, CREDENTIALS_S3_FILE, KEY_S3_FILE)
         else:
-            messagebox.showwarning("Failed", "Both Access Key and Secret Key are required.")
+            messagebox.showwarning(
+                "Failed", "Both Access Key and Secret Key are required."
+            )
             root.destroy()
             return None, None
 
@@ -190,12 +199,13 @@ def get_s3_credentials() -> tuple:
 # Convenience: delete all stored credentials
 # ---------------------------------------------------------------------------
 
+
 def delete_all_credentials():
     root = tk.Tk()
     root.withdraw()
     confirm = messagebox.askyesno(
         "Delete all credentials",
-        "This will remove all stored OAuth and S3 credentials. Continue?"
+        "This will remove all stored OAuth and S3 credentials. Continue?",
     )
     if confirm:
         _delete(CREDENTIALS_OAUTH_FILE, KEY_OAUTH_FILE)

@@ -18,7 +18,6 @@ import shutil
 import zipfile
 from pathlib import Path
 
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s  %(levelname)-8s  %(message)s",
@@ -69,7 +68,9 @@ def extract_text_from_pdf_bytes(pdf_bytes: bytes) -> str:
 def read_pdf_text_from_zip(path: Path) -> str:
     try:
         with zipfile.ZipFile(path, "r") as zf:
-            pdf_candidates = [name for name in zf.namelist() if name.lower().endswith(".pdf")]
+            pdf_candidates = [
+                name for name in zf.namelist() if name.lower().endswith(".pdf")
+            ]
             for pdf_path in pdf_candidates:
                 pdf_text = extract_text_from_pdf_bytes(zf.read(pdf_path))
                 if detect_direction_from_text(pdf_text) != "UNKNOWN":

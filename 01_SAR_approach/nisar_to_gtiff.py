@@ -7,7 +7,7 @@ from osgeo import gdal
 # --------------------------------------------------------------------
 # CONFIG
 # --------------------------------------------------------------------
-IN_DIR  = r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\nisar_data"
+IN_DIR = r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\nisar_data"
 OUT_DIR = r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\nisar_data\GTIFF"
 
 os.makedirs(OUT_DIR, exist_ok=True)
@@ -150,8 +150,9 @@ def main():
             continue
 
         epsg, min_x, min_y, max_x, max_y = geocode_params
-        print(f"[INFO] From YAML: EPSG={epsg}, "
-              f"bbox={min_x},{min_y} : {max_x},{max_y}")
+        print(
+            f"[INFO] From YAML: EPSG={epsg}, " f"bbox={min_x},{min_y} : {max_x},{max_y}"
+        )
 
         sds_names = list_subdataset_names(h5_path)
         if not sds_names:
@@ -162,7 +163,9 @@ def main():
         hvhv_sds = find_subdataset_by_keyword(sds_names, "HVHV")
         if hvhv_sds:
             out_tif_hvhv = os.path.join(OUT_DIR, base + "_HVHV.tif")
-            export_subdataset_to_tif(hvhv_sds, out_tif_hvhv, epsg, min_x, min_y, max_x, max_y)
+            export_subdataset_to_tif(
+                hvhv_sds, out_tif_hvhv, epsg, min_x, min_y, max_x, max_y
+            )
         else:
             print("[WARN] No HVHV subdataset found.")
 
@@ -170,7 +173,9 @@ def main():
         hhhh_sds = find_subdataset_by_keyword(sds_names, "HHHH")
         if hhhh_sds:
             out_tif_hhhh = os.path.join(OUT_DIR, base + "_HHHH.tif")
-            export_subdataset_to_tif(hhhh_sds, out_tif_hhhh, epsg, min_x, min_y, max_x, max_y)
+            export_subdataset_to_tif(
+                hhhh_sds, out_tif_hhhh, epsg, min_x, min_y, max_x, max_y
+            )
         else:
             print("[WARN] No HHHH subdataset found.")
 
@@ -178,7 +183,9 @@ def main():
         rtc_sds = find_subdataset_by_keyword(sds_names, "rtcGammaToSigmaFactor")
         if rtc_sds:
             out_tif_rtc = os.path.join(OUT_DIR, base + "_rtcGammaToSigmaFactor.tif")
-            export_subdataset_to_tif(rtc_sds, out_tif_rtc, epsg, min_x, min_y, max_x, max_y)
+            export_subdataset_to_tif(
+                rtc_sds, out_tif_rtc, epsg, min_x, min_y, max_x, max_y
+            )
         else:
             print("[WARN] No rtcGammaToSigmaFactor subdataset found.")
 

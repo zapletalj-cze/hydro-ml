@@ -38,23 +38,23 @@ from credential_manager import get_oauth_credentials, get_s3_credentials
 # ---------------------------------------------------------------------------
 
 BOUNDING_BOX = {
-    "west":  17.9,
+    "west": 17.9,
     "south": 53.0,
-    "east":  19.1,
+    "east": 19.1,
     "north": 54.4,
 }
 
 DATE_START = "2025-04-01T00:00:00.000Z"
-DATE_END   = "2025-10-31T23:59:59.999Z"
+DATE_END = "2025-10-31T23:59:59.999Z"
 
 OUTPUT_BASE = Path("./sentinel1_data")
 
-TOKEN_URL     = "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token"
+TOKEN_URL = "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token"
 CATALOGUE_URL = "https://catalogue.dataspace.copernicus.eu/odata/v1/Products"
 
 # CDSE S3 endpoint – no 2FA required
-S3_ENDPOINT   = "https://eodata.dataspace.copernicus.eu"
-S3_BUCKET     = "eodata"
+S3_ENDPOINT = "https://eodata.dataspace.copernicus.eu"
+S3_BUCKET = "eodata"
 
 # ---------------------------------------------------------------------------
 # LOGGING
@@ -71,6 +71,7 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # AUTHENTICATION
 # ---------------------------------------------------------------------------
+
 
 def create_search_session(client_id: str, client_secret: str) -> OAuth2Session:
     """OAuth2 Client Credentials – catalogue search only."""
@@ -104,6 +105,7 @@ def create_s3_client(access_key: str, secret_key: str):
 # ---------------------------------------------------------------------------
 # PRODUCT SEARCH
 # ---------------------------------------------------------------------------
+
 
 def build_filter(orbit_direction: str) -> str:
     w = BOUNDING_BOX["west"]
@@ -166,7 +168,7 @@ def print_product_summary(products: list, orbit: str):
     for i, p in enumerate(products):
         name = p.get("Name", "N/A")
         date = p.get("ContentDate", {}).get("Start", "N/A")[:10]
-        size_mb = p.get("ContentLength", 0) / (1024 ** 2)
+        size_mb = p.get("ContentLength", 0) / (1024**2)
         print(f"  [{i+1:2d}] {date}  {name[:52]}  ({size_mb:.0f} MB)")
     print(f"{'='*70}\n")
 
@@ -174,6 +176,7 @@ def print_product_summary(products: list, orbit: str):
 # ---------------------------------------------------------------------------
 # DOWNLOAD VIA S3
 # ---------------------------------------------------------------------------
+
 
 def get_s3_path(product: dict) -> str | None:
     """
@@ -201,9 +204,9 @@ def download_product_s3(
     """
     import zipfile
 
-    product_name  = product.get("Name", "unknown")
-    s3_prefix     = get_s3_path(product)
-    output_zip    = output_dir / f"{product_name}.zip"
+    product_name = product.get("Name", "unknown")
+    s3_prefix = get_s3_path(product)
+    output_zip = output_dir / f"{product_name}.zip"
     expected_size = product.get("ContentLength", 0)
 
     if output_zip.exists():
@@ -233,22 +236,25 @@ def download_product_s3(
             return None
 
         total_size = sum(o["Size"] for o in objects)
-        size_mb = total_size / (1024 ** 2)
+        size_mb = total_size / (1024**2)
         log.info(f"  {len(objects)} files, {size_mb:.0f} MB total")
 
         # Download and zip in one pass
         with zipfile.ZipFile(output_zip, "w", compression=zipfile.ZIP_STORED) as zf:
-            with tqdm(total=total_size, unit="B", unit_scale=True,
-                      desc=f"    {product_name[:38]}", leave=False) as pbar:
+            with tqdm(
+                total=total_size,
+                unit="B",
+                unit_scale=True,
+                desc=f"    {product_name[:38]}",
+                leave=False,
+            ) as pbar:
                 for obj in objects:
-                    key      = obj["Key"]
-                    arc_name = key.removeprefix(
-                        s3_prefix.rstrip("/") + "/"
-                    )
+                    key = obj["Key"]
+                    arc_name = key.removeprefix(s3_prefix.rstrip("/") + "/")
                     arc_name = f"{product_name}.SAFE/{arc_name}"
 
                     response = s3_client.get_object(Bucket=S3_BUCKET, Key=key)
-                    data     = response["Body"].read()
+                    data = response["Body"].read()
                     zf.writestr(arc_name, data)
                     pbar.update(len(data))
 
@@ -266,17 +272,26 @@ def download_product_s3(
 # MAIN
 # ---------------------------------------------------------------------------
 
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Download Sentinel-1 GRD from Copernicus Dataspace via S3"
     )
     parser.add_argument("--orbit", choices=["ASC", "DESC", "BOTH"], default="BOTH")
-    parser.add_argument("--max", type=int, default=None,
-                        help="Max scenes per orbit direction (default: all)")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Search only, do not download")
-    parser.add_argument("--reset-credentials", action="store_true",
-                        help="Delete stored credentials and re-enter")
+    parser.add_argument(
+        "--max",
+        type=int,
+        default=None,
+        help="Max scenes per orbit direction (default: all)",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Search only, do not download"
+    )
+    parser.add_argument(
+        "--reset-credentials",
+        action="store_true",
+        help="Delete stored credentials and re-enter",
+    )
     return parser.parse_args()
 
 
@@ -285,13 +300,16 @@ def main():
 
     if args.reset_credentials:
         from credential_manager import delete_all_credentials
+
         delete_all_credentials()
         return
 
     log.info("Sentinel-1 GRD – CDSE S3 download")
     log.info("=" * 55)
-    log.info(f"AOI:    W={BOUNDING_BOX['west']} S={BOUNDING_BOX['south']} "
-             f"E={BOUNDING_BOX['east']} N={BOUNDING_BOX['north']}")
+    log.info(
+        f"AOI:    W={BOUNDING_BOX['west']} S={BOUNDING_BOX['south']} "
+        f"E={BOUNDING_BOX['east']} N={BOUNDING_BOX['north']}"
+    )
     log.info(f"Period: {DATE_START[:10]} → {DATE_END[:10]}")
     log.info(f"Orbit:  {args.orbit}")
 
@@ -308,10 +326,10 @@ def main():
 
     # Sessions
     search_session = create_search_session(client_id, client_secret)
-    s3_client      = create_s3_client(access_key, secret_key)
+    s3_client = create_s3_client(access_key, secret_key)
 
     OUTPUT_BASE.mkdir(parents=True, exist_ok=True)
-    asc_dir  = OUTPUT_BASE / "ascending"
+    asc_dir = OUTPUT_BASE / "ascending"
     desc_dir = OUTPUT_BASE / "descending"
     asc_dir.mkdir(exist_ok=True)
     desc_dir.mkdir(exist_ok=True)
@@ -344,7 +362,7 @@ def main():
         print(f"\n{'='*55}")
         print(f"DONE: {len(all_downloaded)} files downloaded")
         if all_downloaded:
-            total_gb = sum(f.stat().st_size for f in all_downloaded) / (1024 ** 3)
+            total_gb = sum(f.stat().st_size for f in all_downloaded) / (1024**3)
             print(f"Total size: {total_gb:.1f} GB")
         print(f"Output: {OUTPUT_BASE.resolve()}")
         print(f"{'='*55}")
