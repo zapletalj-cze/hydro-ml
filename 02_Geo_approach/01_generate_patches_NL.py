@@ -583,6 +583,7 @@ def save_patches(patches_dict, gdf_centers, output_dir):
                 "category": center_row["category"],
                 "center_x": center_row.geometry.x,
                 "center_y": center_row.geometry.y,
+                "source_idx": center_row.get("source_idx", None),
                 "uparea": center_row.get("uparea", np.nan),
                 "comid": center_row.get("COMID", None),
                 "n_label_px": int(channels["label"].sum()),

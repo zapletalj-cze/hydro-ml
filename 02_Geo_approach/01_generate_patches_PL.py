@@ -37,7 +37,7 @@ CANOPY_HEIGHT_TIFF = r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detectio
 CANOPY_HEIGHT_SD_TIFF = r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\data\CanopyHeight\Poland\reprojected\ETH_GlobalCanopyHeight_10m_2020_Poland_Map_SD_2180.tif"
 
 OUTPUT_DIR = Path(
-    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\patches_v01"
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\patches_v01_PL"
 )
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -581,6 +581,7 @@ def save_patches(patches_dict, gdf_centers, output_dir):
                 "category": center_row["category"],
                 "center_x": center_row.geometry.x,
                 "center_y": center_row.geometry.y,
+                "source_idx": center_row.get("source_idx", None),
                 "uparea": center_row.get("uparea", np.nan),
                 "comid": center_row.get("COMID", None),
                 "n_label_px": int(channels["label"].sum()),
