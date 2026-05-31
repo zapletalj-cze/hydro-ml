@@ -1,0 +1,26 @@
+!!EXTERNAL BOUNDARIES 
+
+!!OUTFLOW BOUNDARIES
+BLANK BC TYPE == HQ					! If a blank BC type occurs the value entered is used. If NONE, it will revert back to an error.
+Read GIS BC == gis\2d_bc_OUT_{{ domain }}_L.gpkg
+
+
+!!IN FLOW BOUNDARIES - as flow in m3/s 
+If Event == R
+  Read GIS SA == gis\2d_sa_IN_{{ domain }}_R.gpkg
+ 
+Else If Event == C
+  Read GIS SA STREAM IGNORE == gis\2d_sa_IN_{{ domain }}_R.gpkg
+ 
+  Read GIS SA STREAM ONLY == gis\2d_sa_IN_{{ domain }}_L.gpkg
+  Read GIS Stream == gis\2d_stream_{{ domain }}_L.gpkg
+ 
+Else If Event == L
+  Read GIS SA STREAM ONLY == gis\2d_sa_IN_{{ domain }}_L.gpkg
+  Read GIS Stream == gis\2d_stream_{{ domain }}_L.gpkg
+ 
+Else
+
+  Read GIS RF == gis\2d_rf_{{ domain }}_R.gpkg
+  
+End If

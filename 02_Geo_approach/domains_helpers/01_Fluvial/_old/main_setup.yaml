@@ -1,0 +1,376 @@
+tuflow_version: 2023-03-AF # verstion of TUFLOW used for modelling
+write_check_files: True
+epsg: 3979 # epsg of projection used in the project, also name in the common inputs
+d_DTM_path:
+  L06:
+    30: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\30m\L\L06\v01\L06_DTM_30m.tif
+  S03:
+    30: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\30m\S\S03\v03\S03_DTM_30m_Int32_WB_minus_100cm_251208.tif
+    10: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\10m\S\S03\v02\S03_DTM_10m_Int32_251016.tif
+  S04:
+    30: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\30m\S\S04\v04\S04_DTM_30m_Int32_WB_minus_100cm_251208.tif
+    10: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\10m\S\S04\v03\S04_DTM_10m_Int32_251208.tif
+  S06:
+    30: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\30m\S\S06\v03\S06_DTM_30m_Int32_WB_minus_100cm_251204.tif
+    10: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\10m\S\S06\v03\S06_DTM_10m_Int32_251204.tif
+  S10:
+    30: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\30m\S\S10\v02\S10_DTM_30m_Int32_WB_minus_100cm_251021.tif
+    10: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\10m\S\S10\v05\S10_DTM_10m_Int32_260115.tif
+  S12:
+    30: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\30m\S\S12\v03\S12_DTM_30m_Int32_WB_minus_100cm_251209.tif
+    10: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\10m\S\S12\v03\S12_DTM_10m_Int32_251209.tif
+  S23:
+    30: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\30m\S\S23\v03\S23_DTM_30m_Int32_WB_minus_100cm_251218.tif
+    10: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\10m\S\S23\v02\S23_DTM_10m_Int32_251007.tif
+  S34:
+    30: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\30m\S\S34\v04\S34_DTM_30m_Int32_WB_minus_100cm_250716.tif
+    10: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\10m\S\S34\v01\S34_DTM_10m_Int32_250321.tif
+  Q11:
+    5: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\5m\QC\Q13\v01\Q13_001_DTM_5m_Int32_250331.tif
+  F15:
+    30: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\30m\F\F15\v04\F15_DTM_30m_Int32_WB_minus_100cm_250717.tif
+    10: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\10m\F\F15\v01\F15_DTM_10m_Int32_250716.tif
+  F17:
+    30: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\30m\F\F17\v03\F17_DTM_30m_Int32_WB_minus_100cm_250716.tif
+  F43:
+    30: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\30m\F\F43\v02\F43_DTM_30m_Int32_WB_minus_100cm_250715.tif
+    10: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\10m\F\F43\v01\F43_DTM_10m_Int32_250715.tif
+  F08:
+    30: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\30m\F\F08\v02\F08_DTM_30m_Int32_WB_minus_100cm_250725.tif
+  F19:
+    30: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\30m\F\F19\v03\F19_DTM_30m_Int32_WB_minus_100cm_250730.tif
+    10: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\10m\F\F19\v01\F19_DTM_10m_Int32_250725.tif
+  F30:
+    30: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\30m\F\F30\v02\F30_DTM_30m_Int32_WB_minus_100cm_250728.tif
+  F40:
+    30: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\30m\F\F40\v01\F40_DTM_30m_Int32_WB_minus_100cm_250630.tif
+    10: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\10m\F\F40\v00\F40_DTM_10m_Int32_250521.tif
+  F41:
+    30: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\30m\F\F41\v02\F41_DTM_30m_Int32_WB_minus_100cm_250801.tif
+    10: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\10m\F\F41\v00\F41_DTM_10m_Int32_250521.tif
+  F18:
+    10: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\10m\F\F18\v00\F18_DTM_10m_Int32_250521.tif
+  F44:
+    30: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\30m\F\F44\v01\F44_DTM_30m_Int32_WB_minus_100cm_250630.tif
+  K72:
+    30: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\30m\K\K72\v03\K72_DTM_30m_Int32_WB_minus_100cm_250815.tif
+  K79:
+    30: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\30m\K\K79\v03\K79_DTM_30m_Int32_WB_minus_100cm_250815.tif
+  K78:
+    30: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\30m\K\K78\v04\K78_DTM_30m_Int32_WB_minus_100cm_250908.tif
+  K80:
+    30: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\30m\K\K80\v02\K80_DTM_30m_Int32_WB_minus_100cm_250825.tif
+    10: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\10m\K\K80\v01\K80_DTM_10m_Int32_250605.tif
+  K68:
+    30: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\30m\K\K68\v02\K68_DTM_30m_Int32_WB_minus_100cm_250825.tif
+  N41:
+    30: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\30m\N\N41\v02\N41_DTM_30m_Int32_WB_minus_100cm_250826.tif
+  N46:
+    30: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\30m\N\N46\v02\N46_DTM_30m_Int32_WB_minus_100cm_250826.tif
+  N17:
+    30: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\30m\N\N17\v02\N17_DTM_30m_Int32_WB_minus_100cm_250826.tif
+  N34:
+    30: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\30m\N\N34\v02\N34_DTM_30m_Int32_WB_minus_100cm_250827.tif
+  K42:
+    30: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\30m\K\K42\v02\K42_DTM_30m_Int32_WB_minus_100cm_250908.tif
+  K83:
+    30: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\30m\K\K83\v01\K83_DTM_30m_Int32_WB_minus_100cm_250630.tif
+  K77:
+    30: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\30m\K\K77\v03\K77_DTM_30m_Int32_WB_minus_100cm_250911.tif
+  R50:
+    30: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\30m\R\R50\v03\R50_DTM_30m_Int32_WB_minus_100cm_241120.tif
+    10: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\10m\R\R50\v04\R50_DTM_10m_Int32_250917.tif
+  M06:
+    30: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\30m\M\M06\v03\M06_DTM_30m_Int32_WB_minus_100cm_260320.tif
+  M03:
+    30: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\30m\M\M03\v02\M03_DTM_30m_Int32_260320.tif
+
+
+snap_raster:
+  v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\00_GIS\01_SnapRaster\snap_raster_30.tif
+
+domains_list: # list of all domains and DTM resolution
+  O: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\06_Tuflow\_reference\O_CAFL_Tuflow_domains.xlsx
+  Y: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\06_Tuflow\_reference\01_MERIT\Y_CAFL_Tuflow_domains.xlsx
+  Q: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\06_Tuflow\_reference\Q_CAFL_Tuflow_domains.xlsx
+  E: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\06_Tuflow\_reference\E_CAFL_Tuflow_domains.xlsx
+  R: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\06_Tuflow\_reference\01_MERIT\R_CAFL_Tuflow_domains.xlsx
+  S: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\06_Tuflow\_reference\01_MERIT\S_CAFL_Tuflow_domains.xlsx
+  F: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\06_Tuflow\_reference\01_MERIT\F_CAFL_Tuflow_domains.xlsx
+  K: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\06_Tuflow\_reference\01_MERIT\K_CAFL_Tuflow_domains.xlsx
+  N: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\06_Tuflow\_reference\01_MERIT\N_CAFL_Tuflow_domains.xlsx
+  L: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\06_Tuflow\_reference\01_MERIT\L_CAFL_Tuflow_domains.xlsx
+  M: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\06_Tuflow\_reference\01_MERIT\M_CAFL_Tuflow_domains.xlsx
+
+# path to computers and other machines
+root_path:
+  P006_d: \\eupraappp006\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD
+  P005_d: \\eupraappp005\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD
+  P032_d: \\eupraappp032\01_Projects\157_Canada_Flood_v3\01_MD\01_Hazard
+  P033_d: \\eupraappp033\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD
+  P041_d: \\eupraappp041\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD
+  P098_d: \\eupraappp098\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD
+  P099_d: \\eupraappp099\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD
+  P100_d: \\eupraappp100\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD
+  P119_d: \\eupraappp119\01_Projects\157_Canada_Flood_v3\01_MD\01_Hazard
+  P120_d: \\eupraappp120\01_Projects\157_Canada_Flood_v3\01_MD\01_Hazard
+  B: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD
+  D_local: d:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD
+  P073_g:  \\eupraappp073\g$\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD
+
+folder_common_inputs_default:
+  b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD
+
+prj_file:
+  b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\06_Tuflow\01_common\EPSG_3979.prj
+soil_file:
+  layer_0_30: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\12_Soils\USDA_classification\30m\multiple_layers\USDA_classified_pro_level_0-30.tif
+  layer_31_60: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\12_Soils\USDA_classification\30m\multiple_layers\USDA_classified_pro_level_30-60.tif
+  layer_61_100: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\12_Soils\USDA_classification\30m\multiple_layers\USDA_classified_pro_level_60-100.tif
+
+layer_drainage:
+  O: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\12_Soils\drain_area\10m\_development\2d_soil_drain_area_Ontario_g_10.tif
+
+manning_default:
+    10: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\11_LandCover\CAFL_v03\10m\CAN_CAFL_v3_10m_240731.tif
+    30: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\11_LandCover\CAFL_v03\30m\CAN_CAFL_v03_30m_240731.tif
+
+manning_buildings_default:
+  None # do not fill
+
+user_dirs_levee_first:
+  A91 : B:\01_Projects\145_Germany_Flood\01_MD\01_HAZARD\06_TUFLOW\01_CommonInputs\model\LeveeFirst_userDefined\A91.csv
+  A81 : B:\01_Projects\145_Germany_Flood\01_MD\01_HAZARD\06_TUFLOW\01_CommonInputs\model\LeveeFirst_userDefined\A81.csv
+  O46: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\02_levees\_LeveeFirst_userDefined\O46.csv
+
+# culverts
+zsh_culvert_P:
+  S03:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\S03\zsh_output\S03_culverts_30m_251009_P.shp
+    10: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\S03\zsh_output\S03_culverts_10m_251009_P.shp
+  S04:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\S04\zsh_output\S04_culverts_30m_251030_P.shp
+    10: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\S04\zsh_output\S04_culverts_10m_251030_P.shp
+  S06:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\S06\zsh_output\S06_culverts_30m_250930_P.shp
+    10: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\S06\zsh_output\S06_culverts_10m_250930_P.shp
+  S10:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\S10\zsh_output\S10_culverts_30m_251016_P.shp
+    10: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\S10\zsh_output\S10_culverts_10m_251016_P.shp
+  S12:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\S12\zsh_output\S12_culverts_30m_251023_P.shp
+    10: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\S12\zsh_output\S12_culverts_10m_251023_P.shp
+  S23:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\S23\zsh_output\S23_culverts_30m_251003_P.shp
+    10: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\S23\zsh_output\S23_culverts_10m_251003_P.shp
+  S34:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\S34\zsh_output\S34_culverts_30m_250612_P.shp
+    10: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\S34\zsh_output\S34_culverts_10m_250616_P.shp
+  F15:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\F15\zsh_output\F15_culverts_30m_250702_P.shp
+    10: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\F15\zsh_output\F15_culverts_10m_250702_P.shp
+  F17:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\F17\zsh_output\F17_culverts_30m_250704_P.shp
+  F43:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\F43\zsh_output\F43_culverts_30m_250704_P.shp
+    10: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\F43\zsh_output\F43_culverts_10m_250704_P.shp
+  F08:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\F08\zsh_output\F08_culverts_30m_250722_P.shp
+  F19:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\F19\zsh_output\F19_culverts_30m_250725_P.shp
+    10: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\F19\zsh_output\F19_culverts_10m_250725_P.shp
+  F40:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\F40\zsh_output\F40_culverts_30m_250728_P.shp
+    10: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\F40\zsh_output\F40_culverts_10m_250728_P.shp
+  F41:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\F41\zsh_output\F41_culverts_30m_250725_P.shp
+    10: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\F41\zsh_output\F41_culverts_10m_250725_P.shp
+  F18:
+    10: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\F18\zsh_output\F18_culverts_10m_250730_P.shp
+  F44:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\F44\zsh_output\F44_cuvlerts_30m_250801_P.shp
+  K72:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\K72\zsh_output\K72_culverts_30m_250804_P.shp
+  K79:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\K79\zsh_output\K79_culverts_30m_250804_P.shp
+  K78:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\K78\zsh_output\K78_culverts_30m_250805_P.shp
+  K80:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\K80\zsh_output\K80_culverts_30m_250815_P.shp
+    10: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\K80\zsh_output\K80_culverts_10m_250815_P.shp
+  K68:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\K68\zsh_output\K68_culverts_30m_250825_P.shp
+  N41:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\N41\zsh_output\N41_culverts_30m_250826_P.shp
+  N46:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\N46\zsh_output\N46_culverts_30m_250826_P.shp
+  N17:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\N17\zsh_output\N17_culverts_30m_250826_P.shp
+  N34:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\N34\zsh_output\N34_culverts_30m_250827_P.shp
+  K42:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\K42\zsh_output\K42_culverts_30m_250827_P.shp
+  K83:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\K83\zsh_output\K83_culverts_30m_250827_P.shp
+  K77:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\K77\zsh_output\K77_culverts_30m_250825_P.shp
+  R50:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\R50\zsh_output\R50_culverts_30m_250911_P.shp
+    10: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\R50\zsh_output\R50_culverts_10m_250911_P.shp
+
+
+zsh_culvert_L:
+  S03:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\S03\zsh_output\S03_culverts_30m_251009_L.shp
+    10: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\S03\zsh_output\S03_culverts_10m_251009_L.shp
+  S04:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\S04\zsh_output\S04_culverts_30m_251030_L.shp
+    10: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\S04\zsh_output\S04_culverts_10m_251030_L.shp
+  S06:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\S06\zsh_output\S06_culverts_30m_250930_L.shp
+    10: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\S06\zsh_output\S06_culverts_10m_250930_L.shp
+  S10:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\S10\zsh_output\S10_culverts_30m_251016_L.shp
+    10: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\S10\zsh_output\S10_culverts_10m_251016_L.shp
+  S12:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\S12\zsh_output\S12_culverts_30m_251023_L.shp
+    10: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\S12\zsh_output\S12_culverts_10m_251023_L.shp
+  S23:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\S23\zsh_output\S23_culverts_30m_251003_L.shp
+    10: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\S23\zsh_output\S23_culverts_10m_251003_L.shp
+  S34:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\S34\zsh_output\S34_culverts_30m_250612_L.shp
+    10: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\S34\zsh_output\S34_culverts_10m_250616_L.shp
+  F15:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\F15\zsh_output\F15_culverts_30m_250702_L.shp
+    10: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\F15\zsh_output\F15_culverts_10m_250702_L.shp
+  F17:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\F17\zsh_output\F17_culverts_30m_250704_L.shp
+  F43:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\F43\zsh_output\F43_culverts_30m_250704_L.shp
+    10: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\F43\zsh_output\F43_culverts_10m_250704_L.shp
+  F08:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\F08\zsh_output\F08_culverts_30m_250722_L.shp
+  F19:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\F19\zsh_output\F19_culverts_30m_250725_L.shp
+    10: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\F19\zsh_output\F19_culverts_10m_250725_L.shp
+  F40:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\F40\zsh_output\F40_culverts_30m_250728_L.shp
+    10: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\F40\zsh_output\F40_culverts_10m_250728_L.shp
+  F41:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\F41\zsh_output\F41_culverts_30m_250725_L.shp
+    10: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\F41\zsh_output\F41_culverts_10m_250725_L.shp
+  F18:
+    10: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\F18\zsh_output\F18_culverts_10m_250730_L.shp
+  F44:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\F44\zsh_output\F44_cuvlerts_30m_250801_L.shp
+  K72:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\K72\zsh_output\K72_culverts_30m_250804_L.shp
+  K79:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\K79\zsh_output\K79_culverts_30m_250804_L.shp
+  K78:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\K78\zsh_output\K78_culverts_30m_250805_L.shp
+  K80:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\K80\zsh_output\K80_culverts_30m_250815_L.shp
+    10: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\K80\zsh_output\K80_culverts_10m_250815_L.shp
+  K68:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\K68\zsh_output\K68_culverts_30m_250825_L.shp
+  N41:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\N41\zsh_output\N41_culverts_30m_250826_L.shp
+  N46:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\N46\zsh_output\N46_culverts_30m_250826_L.shp
+  N17:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\N17\zsh_output\N17_culverts_30m_250826_L.shp
+  N34:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\N34\zsh_output\N34_culverts_30m_250827_L.shp
+  K42:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\K42\zsh_output\K42_culverts_30m_250827_L.shp
+  K83:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\K83\zsh_output\K83_culverts_30m_250827_L.shp
+  K77:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\K77\zsh_output\K77_culverts_30m_250825_L.shp
+  R50:
+    30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\R50\zsh_output\R50_culverts_30m_250911_L.shp
+    10: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\03_culverts\R50\zsh_output\R50_culverts_10m_250911_L.shp
+
+
+# channels
+zsh_channel_P:
+  #C01: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\04_channels\O01\zsh_output\O01_channels_240220_P.shp
+  #O01: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\04_channels\O01\zsh_output\O01_channels_240220_P.shp
+  #O02: B:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\04_channels\O02\zsh_output\O02_channels_240220_P.shp
+  #O06: V:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\10m\ON\O06\v02\03_noID\O06_20250303\zsh_output\frn_v02_O06_L_edited_id_L_L_P.shp
+  #O10: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\04_channels\O10\zsh_output\O10_channels_250304_P.shp
+  #O33: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\04_channels\O33\zsh_output\O33_channels_241023_P.shp
+  #Q02: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\04_channels\Q02\zsh_output\frn_v03_Q02_L_lookup_250109_id_L_L_P.shp
+  #Q04: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\04_channels\Q04\zsh_output\frn_v03_Q04_L_edited_id_L_L_P.shp
+  #Q12: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\04_channels\Q12\zsh_output\frn_v03_Q12_L_lookup_250110_id_L_L_P.shp
+  #Q20: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\04_channels\Q20\zsh_output\frn_v05_Q20_L_edited_id_L_L_P.shp
+  #Q21: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\10m\QC\Q21\v04\03_noID\Q21_20250213\zsh_output\frn_v04_Q21_L_edited_id_L_L_P.shp
+  #Q24: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\04_channels\Q24\zsh_output\frn_v05_Q24_L_edited_id_L_L_P.shp
+  #Q26: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\04_channels\Q26\zsh_output\frn_v04_Q26_L_edited_id_L_L_P.shp
+  #Q27: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\04_channels\Q27\zsh_output\frn_v04_Q27_L_edited_id_L_L_P.shp
+  #O46:
+  #  30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\04_channels\O46\zsh_output\O46_channels_250126_P.shp
+  #M06: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\04_channels\M06\zsh_output\M06_channels_260318_P.shp
+
+zsh_channel_L:
+  #C01: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\04_channels\O01\zsh_output\O01_channels_240220_L.shp
+  #O01: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\04_channels\O01\zsh_output\O01_channels_240220_L.shp
+  #O02: B:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\04_channels\O02\zsh_output\O02_channels_240220_L.shp
+  #O06: V:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\10m\ON\O06\v02\03_noID\O06_20250303\zsh_output\frn_v02_O06_L_edited_id_L_L_L.shp
+  #O10: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\04_channels\O10\zsh_output\O10_channels_250304_L.shp
+  #O33: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\04_channels\O33\zsh_output\O33_channels_241023_L.shp
+  #Q02: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\04_channels\Q02\zsh_output\frn_v03_Q02_L_lookup_250109_id_L_L_L.shp
+  #Q04: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\04_channels\Q04\zsh_output\frn_v03_Q04_L_edited_id_L_L_L.shp
+  #Q12: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\04_channels\Q12\zsh_output\frn_v03_Q12_L_lookup_250110_id_L_L_L.shp
+  #Q20: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\04_channels\Q20\zsh_output\frn_v05_Q20_L_edited_id_L_L_L.shp
+  #Q21: v:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\01_DTM\10m\QC\Q21\v04\03_noID\Q21_20250213\zsh_output\frn_v04_Q21_L_edited_id_L_L_L.shp
+  #Q24: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\04_channels\Q24\zsh_output\frn_v05_Q24_L_edited_id_L_L_L.shp
+  #Q26: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\04_channels\Q26\zsh_output\frn_v04_Q26_L_edited_id_L_L_L.shp
+  #Q27: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\04_channels\Q27\zsh_output\frn_v04_Q27_L_edited_id_L_L_L.shp
+  #O46:
+  #  30: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\04_channels\O46\zsh_output\O46_channels_250126_L.shp
+  #M06: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\04_channels\M06\zsh_output\M06_channels_260318_L.shp
+
+# levees
+zsh_levee_L:
+  O01: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\02_levees\O01\zsh_output\O01_levees_240227_L.shp
+  O02: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\02_levees\O02\zsh_output\O02_levees_240206_L.shp
+  O03: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\02_levees\O03\zsh_output\O03_levees_240202_L.shp
+  O05: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\02_levees\O05\zsh_output\O05_levees_240202_L.shp
+  O06: B:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\02_levees\O06\zsh_output\O06_levees_250305_L.shp
+  O11: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\02_levees\O11\zsh_output\O11_levees_250604_L.shp
+  O46: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\02_levees\O46\zsh_output\O46_levee_L.shp
+
+zsh_levee_P:
+  O01: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\02_levees\O01\zsh_output\O01_levees_240227_P.shp
+  O02: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\02_levees\O02\zsh_output\O02_levees_240206_P.shp
+  O03: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\02_levees\O03\zsh_output\O03_levees_240202_P.shp
+  O05: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\02_levees\O05\zsh_output\O05_levees_240202_P.shp
+  O06: B:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\02_levees\O06\zsh_output\O06_levees_250305_P.shp
+  O11: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\02_levees\O11\zsh_output\O11_levees_250604_P.shp
+  O46: b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\05_Defences\02_levees\O46\zsh_output\O46_levee_P.shp
+
+DTM_add_path:
+  dtm_buildings: V:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\30_Weights\01_forTuflow\Ontario\O_buildings_10m_231009.tif
+  dtm_wb: V:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\30_Weights\01_forTuflow\Ontario\O_WB_10m_231010.tif
+
+DTM_add_specification:
+  dtm_buildings:
+    Read Grid Zpts: ADD
+    multiplication_factor: 0.2
+  dtm_wb:
+    Read Grid Zpts: ADD
+    multiplication_factor: -0.3
+
+# scenarios of DTM combinations - important for DTM extraction
+DTMs_combination:
+  D21: [1,20]
+  D10: [10]
+  D11: [1,10]
+  D01: [1]
+  D10.5: [10, 0.5]
+  D00.5: [0.5]
+  D30: [30]
+  D301: [30,10]

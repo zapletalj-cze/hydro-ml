@@ -1,0 +1,4 @@
+Model Origin and Extent == TGC  					! Uses origin and extent same as the TGC, or Auto
+Orientation Angle == TGC  							! Uses orientation angle same as the TGC, or angle in degrees
+Base Cell Size == TGC 								! or value (eg. set level 1 cell size to 10 metres)
+Read GIS Nesting == gis\2d_qnl_{{ domain }}_R.gpkg 		! Reads in Quadtree nesting level GIS layer

@@ -1,0 +1,55 @@
+copy_to_server: \\EUPRAAPPPXXX\01_Projects 
+# optional attribute if specified, TUFLOW machine will copy the result to this path once finished (eg. after automatic restarts)
+# TUFLOW machine must have access to this storage machine and path must be shared
+# after copying, inside the database specified in schema below, attribute CopiedTo will be changed to this path
+
+data_source: \\EUPRAAPPP134\01_projects2\170_Nordics_flood\01_MD\01_HAZARD\06_TU_Pluvial\30m\L69\L69_0702 # required
+# location were the data is stored, tuflow machines must have access here, path can be anything
+# you copy the data here and save the path into yaml in this line
+
+domain: L69_0702 # required
+
+manual_restart: false # required only if manual restart - eg domain finihsed, but you decide you are restarting only one RP later
+machine: eupraappp032 #required only if manual restart, where the domain is prepared with .trf file/or where to force the computation
+
+auto_restart: false # optional, can be used for fluvial auto restart, needs to be used with max_time and time_shift
+max_time: 200 # otpional
+time_shift: 10 # optional
+
+project: 157_Canada_Flood_v3 # required for path creation 
+peril_path: 06_TU_Pluvial #required, used for path creation
+#e.g.b:\01_Projects\**157_Canada_Flood_v3**\01_MD\01_HAZARD\**06_TU_Pluvial**\ ;rest of path shoud have same structure in all projects: <drive>:\01_Projects\<project>\01_MD\01_HAZARD\<peril_path>\
+
+resolution: 30m # required, so sub folder is created ..30m/L69/L69_0702/..
+
+schema: TUFLOW_Europe.Pluvial.Calculation # optional, can be None, used for DB tracking, db must exist on 072 - ask for more info
+
+tuflow_precision: iSP # optional - default iSP
+tuflow_version: 2023-03-AF # optional - default 2023-03-AF
+
+start_scenario: pl_RPall_HPC_30m # required, start scenario from which scenarios were created or can be 'manual' - used for DB tracking
+# CSV files with scenarios for individual type flood are stored in folder 03_bat e.g b:\01_Projects\157_Canada_Flood_v3\01_MD\01_HAZARD\06_TU_Pluvial\03_bat\
+
+test_run_done: true # if test run was done, if you specified true without doing test run and computation fails, you will be locked out of TUFLOW machine
+
+scenario: # what will be simulated, this is used instead of the bat.csv
+  r00005:
+    Duration: d1440
+    Inf_Soil: I10
+    dtm: D30
+    end: e24
+    model: H00
+    output: o24
+    outputsize: ms30
+    restart: Hs
+    start: s0
+  r00020:
+    Duration: d1440
+    Inf_Soil: I10
+    dtm: D30
+    end: e24
+    model: H00
+    output: o24
+    outputsize: ms30
+    restart: Hs
+    start: s0

@@ -1,0 +1,140 @@
+!! summary:
+!! - cellsize, code, mat, soil, IWL
+!! - DTM, zsh,CWL,FLC
+!! - SGS parameters
+!! - restart files 
+
+!!  Define the location, orientation and dimensions of the 2D grid 
+Origin == {{ x_min }}, {{ y_min }}
+Orientation == {{ x_min_shift }}, {{ y_min }}
+Grid Size (X,Y) == {{ ncols }}, {{ nrows }}
+
+!! Define mesh cell size -- from 1m to 250m
+Read File ==  ..\common\17_CellSizeToTGC.tcf
+!Cell Size == {{ cellsize }}.
+
+!! Define active/inactive cells
+Set Code == 0
+Read GIS Code == gis\2d_code_{{ domain }}_R.gpkg
+
+!! Define spatial variation in material (land-use) categories
+Set Mat == {{ mat }}
+Read GRID Mat == grid\2d_mat_{{ domain }}.tif
+
+! ! Define spatial variation in soil categories
+If Event == I00
+  !! no action, no soil
+Else If Event == I02
+  !! no action, no soil, only tunnels
+Else If Event == I05
+  !! no action, no soil, only tunnels 50% blockage
+Else If Event == I06
+  !! no action, no soil, only tunnels 50% blockage
+Else If Event == I07
+  !! no action, no soil, only tunnels 50% blockage
+Else If Event == I
+  !! no action, no soil
+Else
+  Set Soil == {{ soil }}
+  !! Read GRID Soil == grid\2d_soil_{{ domain }}.tif    ! Need to verify with more soils used...
+  !! Set Soil Thickness == 1
+  Read GRID Soil Layer 1 == grid\2d_soil_{{ domain }}_layer_0_30.tif  
+  Read GRID Soil Layer 2 == grid\2d_soil_{{ domain }}_layer_31_60.tif  
+  Read GRID Soil Layer 3 == grid\2d_soil_{{ domain }}_layer_61_100.tif 
+
+ 
+  Set Soil Thickness Layer 1 == 0.30
+  Set Soil Thickness Layer 2 == 0.30
+  Set Soil Thickness Layer 3 == 0.40
+
+  !!Set IGW Depth Layer 1 == 0.3
+  !!Set IGW Depth Layer 2 == 0.3
+  !!Set IGW Depth Layer 3 == 0.4
+End If
+
+! Define initial water surface water level (for see with higher tide)
+Set IWL == {{ iwl }}										!! Sets the initial water level at all nodes to X
+
+!! elevation (DTM) datasets
+!! Define elevations at 2D cell centres, mid-sides and corners
+Set Zpts == {{ zpts }}								!! Set elevations everywhere to X m
+
+
+!! scenarios for one or more DTMs
+If Scenario == D01
+	Read GRID Zpts == grid\dtm_{{ domain }}_01.tif
+Else If Scenario == D02
+	Read GRID Zpts == grid\dtm_{{ domain }}_02.tif
+Else If Scenario == D05
+	Read GRID Zpts == grid\dtm_{{ domain }}_05.tif
+Else If Scenario == D10
+	Read GRID Zpts == grid\dtm_{{ domain }}_10.tif
+Else If Scenario == D10_01
+	Read GRID Zpts == grid\dtm_{{ domain }}_10.tif
+	Read GRID Zpts == grid\dtm_{{ domain }}_01.tif
+Else If Scenario == D01_10
+	Read GRID Zpts == grid\dtm_{{ domain }}_01.tif
+	Read GRID Zpts == grid\dtm_{{ domain }}_10.tif
+Else If Scenario == D10_02
+	Read GRID Zpts == grid\dtm_{{ domain }}_10.tif
+	Read GRID Zpts == grid\dtm_{{ domain }}_02.tif
+Else If Scenario == D10_02
+	Read GRID Zpts == grid\dtm_{{ domain }}_02.tif
+	Read GRID Zpts == grid\dtm_{{ domain }}_10.tif
+Else If Scenario == D10_05
+	Read GRID Zpts == grid\dtm_{{ domain }}_10.tif
+	Read GRID Zpts == grid\dtm_{{ domain }}_05.tif
+Else If Scenario == D05_10
+	Read GRID Zpts == grid\dtm_{{ domain }}_05.tif
+	Read GRID Zpts == grid\dtm_{{ domain }}_10.tif
+Else If Scenario == D20
+	Read GRID Zpts == grid\dtm_{{ domain }}_20.tif
+Else If Scenario == D30
+	Read GRID Zpts == grid\dtm_{{ domain }}_30.tif
+Else If Scenario == D30_01
+	Read GRID Zpts == grid\dtm_{{ domain }}_30.tif
+	Read GRID Zpts == grid\dtm_{{ domain }}_01.tif
+Else If Scenario == D01_30
+	Read GRID Zpts == grid\dtm_{{ domain }}_01.tif
+	Read GRID Zpts == grid\dtm_{{ domain }}_30.tif
+Else If Scenario == D30_10
+	Read GRID Zpts == grid\dtm_{{ domain }}_30.tif
+	Read GRID Zpts == grid\dtm_{{ domain }}_10.tif
+Else If Scenario == D10_30
+	Read GRID Zpts == grid\dtm_{{ domain }}_10.tif
+	Read GRID Zpts == grid\dtm_{{ domain }}_30.tif
+Else
+	Read GRID Zpts == grid\dtm_{{ domain }}.tif
+End If
+
+!!	INPUTS
+Read File == LocalInputs_{{ domain }}.tcf		!! Using of additional raster to modify DTM and Zpt features for DTM modification
+
+
+If Scenario == G00									! SGS
+	!SGS Sample Frequency == 11 					!! <number of sample locations per face> = TUFLOW Cell Size/Target Distance +1
+	!SGS Sample Target Distance == 10				!! <distance in metres or feet> min raster resolution used as the sampling target distance to compute the sampling frequency.
+Else If Scenario == G01
+	!SGS Sample Frequency == 11						!! <number of sample locations per face> = TUFLOW Cell Size/Target Distance +1
+	!SGS Sample Target Distance == 10				!! <distance in metres or feet> min raster resolution used as the sampling target distance to compute the sampling frequency.
+Else If Scenario == G02
+	!SGS Sample Frequency == 11						!! <number of sample locations per face> = TUFLOW Cell Size/Target Distance +1
+	!SGS Sample Target Distance == 10				!! <distance in metres or feet> min raster resolution used as the sampling target distance to compute the sampling frequency.
+Else If Scenario == G03
+	!SGS Sample Frequency == 11						!! <number of sample locations per face> = TUFLOW Cell Size/Target Distance +1
+	!SGS Sample Target Distance == 10 				!! <distance in metres or feet> min raster resolution used as the sampling target distance to compute the sampling frequency.
+	
+Else If Scenario == T00								! SGS and Quadtree		
+	!SGS Sample Frequency == 11						!! <number of sample locations per face> = TUFLOW Cell Size/Target Distance +1
+	!SGS Sample Target Distance == 10				!! <distance in metres or feet> min raster resolution used as the sampling target distance to compute the sampling frequency.
+Else If Scenario == T01
+	!SGS Sample Frequency == 11						!! <number of sample locations per face> = TUFLOW Cell Size/Target Distance +1
+	!SGS Sample Target Distance == 10				!! <distance in metres or feet> min raster resolution used as the sampling target distance to compute the sampling frequency.
+Else If Scenario == T02
+	!SGS Sample Frequency == 11						!! <number of sample locations per face> = TUFLOW Cell Size/Target Distance +1
+	!SGS Sample Target Distance == 10				!! <distance in metres or feet> min raster resolution used as the sampling target distance to compute the sampling frequency.
+Else If Scenario == T03
+	!SGS Sample Frequency ==  11					!! <number of sample locations per face> = TUFLOW Cell Size/Target Distance +1
+	!SGS Sample Target Distance == 10				!! <distance in metres or feet> min raster resolution used as the sampling target distance to compute the sampling frequency.
+End If
+

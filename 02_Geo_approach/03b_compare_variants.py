@@ -38,9 +38,9 @@ import matplotlib.pyplot as plt
 # Map variant name -> OUTPUT_DIR of the training run.
 # These dirs must each contain a metrics_summary.json.
 VARIANTS = {
-    "v1 (DSM)":          Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v03_segformer_v1"),
-    "v2 (DSM+TPI)":      Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v03_segformer_v2"),
-    "v3 (DSM+TPI+aux)":  Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v03_segformer_v3"),
+    "v1 (DSM)":          Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v03_segformer_v1_dsm_only"),
+    "v2 (DSM+TPI)":      Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v03_segformer_v2_dsm_tpi"),
+    "v3 (DSM+TPI+aux)":  Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v03_segformer_v3_dsm_tpi_canopyheight"),
 }
 
 # Output dir for the comparison artifacts

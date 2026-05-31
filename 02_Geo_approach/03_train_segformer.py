@@ -48,7 +48,7 @@ import matplotlib
 matplotlib.use("Agg")               # no display required when running headless
 import matplotlib.pyplot as plt
 import segmentation_models_pytorch as smp
-
+import time
 
 # ============================================================
 # CONFIG  -  edit these for each ablation run
@@ -61,7 +61,7 @@ METADATA_CSV_PL = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detect
 METADATA_CSV_NL = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\patches_v01_NL\patches_metadata.csv")
 
 # Output dir - MUST be unique per variant
-OUTPUT_DIR = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v03_segformer_v3")
+OUTPUT_DIR = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v03_segformer_v3_dsm_tpi_canopyheight")
 
 
 # ------- Reproducibility ------------------------------------
@@ -70,8 +70,9 @@ SEED = 42
 
 # ------- Hardware -------------------------------------------
 # num_workers > 0 now works because we run as a script with __main__ guard.
-# 8 is a safe default for most workstations; raise to 12-16 if CPU has cores.
-NUM_WORKERS = 8
+# 8 workers is the sweet spot on Windows: more causes disk I/O contention and
+# IPC overhead (all 32 processes racing to read .npz files simultaneously).
+NUM_WORKERS = 16
 
 
 # ------- Channels (ablation variant!) ------------------------
@@ -91,7 +92,7 @@ TEST_FRAC  = 0.15
 
 # ------- Training hyperparameters ---------------------------
 BATCH_SIZE      = 16
-N_EPOCHS        = 100
+N_EPOCHS        = 175
 LR              = 1e-4
 WEIGHT_DECAY    = 1e-3
 GRAD_CLIP       = 1.0
@@ -486,11 +487,13 @@ def build_dataloaders(df_train, df_val, norm_stats):
         train_ds, batch_size=BATCH_SIZE, shuffle=True,
         num_workers=NUM_WORKERS, pin_memory=True, drop_last=True,
         persistent_workers=(NUM_WORKERS > 0),
+        prefetch_factor=4 if NUM_WORKERS > 0 else None,
     )
     val_loader = DataLoader(
         val_ds, batch_size=BATCH_SIZE, shuffle=False,
         num_workers=NUM_WORKERS, pin_memory=True,
         persistent_workers=(NUM_WORKERS > 0),
+        prefetch_factor=4 if NUM_WORKERS > 0 else None,
     )
     return train_loader, val_loader, patches_root_dirs
 

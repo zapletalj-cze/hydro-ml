@@ -1,0 +1,4 @@
+!! VIRTUAL PIPES
+Pit Inlet Database == ..\common\Inlets\pit_inlet_dbase.csv
+Read GIS Pits == ..\model\gis\1d_pit_{{ domain }}_P.gpkg
+Pit Default Extrapolate Q Curve == OFF					! [ {ON} | OFF ]

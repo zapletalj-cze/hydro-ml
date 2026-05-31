@@ -1,0 +1,254 @@
+﻿!! COPY-PASTED FROM 5m SOIL & INFILTRATION setup based on infiltration events (e.g. I00 (I); I50; I51)
+
+!! Soils from the "Common Inputs"
+!Read File == ..\common\tef_SoilInfiltrationEvent_SGS.tcf
+    !Read Soils File == ..\common\Soil_GA_05moist.tsoilf
+
+!Soils directly from the domain
+  Define Event == I 
+  !! no action 
+  End Define
+  
+  Define Event == I00 
+    Read Materials File == ..\common\v28-CAN_Mat_pl.csv 
+  !! no action 
+  End Define
+  
+  Define Event == I02 													! only tunnels by feature VP
+    Read Soils File == ..\common\Soil\QCforEU\CAN_Soil_GA00_Qxx.tsoilf
+    Read Materials File == ..\common\v28-CAN_Mat_pl.csv   
+	ESTRY Control File == ..\runs\{{ domain }}_tunnel.ecf 							! linked ESTRY model control file
+	Maximum 1D Channels == 10000										! [ <mchan> | {100000} ]    Only used for allocating temporary space.  Memory required only for actual number of channels  (Virtual Pipes) allocated.
+  End Define
+
+!! no action, no soil, only tunnels 50% blockage, no inf. in material
+  Define Event == I05 													! only tunnels by feature VP
+    Read Soils File == ..\common\Soil\QCforEU\CAN_Soil_GA00_Qxx.tsoilf
+    Read Materials File == ..\common\v28-CAN_Mat_pl.csv   
+	ESTRY Control File == ..\runs\{{ domain }}_tunnel_50.ecf 							! linked ESTRY model control file
+	Maximum 1D Channels == 10000										! [ <mchan> | {100000} ]    Only used for allocating temporary space.  Memory required only for actual number of channels  (Virtual Pipes) allocated.
+  End Define
+
+!! no action, no soil, VP 50% +  tunnels 50% blockage,
+  Define Event == I06 													! only tunnels by feature VP
+    Read Soils File == ..\common\Soil\QCforEU\CAN_Soil_GA00_Qxx.tsoilf
+    Read Materials File == ..\common\v28-CAN_Mat_pl.csv   
+	ESTRY Control File == ..\runs\{{ domain }}_GA50.ecf 							! linked ESTRY model control file
+	Maximum 1D Channels == 200000										! [ <mchan> | {100000} ]    Only used for allocating temporary space.  Memory required only for actual number of channels  (Virtual Pipes) allocated.
+  End Define
+
+!! no action, no soil, VP 50% +  tunnels 50% blockage; inf. only by materials (compare to I06, where no inf in material)
+  Define Event == I07  													! Virtual Pipes ON 50%, no soil inf. only by materials (compare to I06, where no inf in material)
+    !Read Materials File == ..\common\Soil\Watersheds\{{ area }}xx\v28_vp-CAN_Mat_pl_GA50_{{ area }}xx.csv   
+    Read Materials File == ..\common\Soil\QCforEU\v28_vp-CAN_Mat_pl_GA50_Qxx.csv   
+	ESTRY Control File == ..\runs\{{ domain }}_GA50.ecf 							! linked ESTRY model control file
+	Maximum 1D Channels == 200000										! [ <mchan> | {100000} ]    Only used for allocating temporary space.  Memory required only for actual number of channels  (Virtual Pipes) allocated.
+  End Define
+
+ 
+  Define Event == I10 
+    Read Soils File == ..\common\Soil\QCforEU\CAN_Soil_GA00_Qxx.tsoilf
+    !Read Materials File == ..\common\Soil\Watersheds\{{ area }}xx\v28-CAN_Mat_pl_GA00_{{ area }}xx.csv   
+    Read Materials File == ..\common\Soil\QCforEU\v28-CAN_Mat_pl_GA00_Qxx.csv   
+  End Define
+
+  Define Event == I12 
+    Read Soils File == ..\common\Soil\QCforEU\CAN_Soil_GA00_Qxx.tsoilf
+    !Read Materials File == ..\common\Soil\QC\{{ area }}xx\v28-CAN_Mat_pl_GA00_{{ area }}xx.csv
+    Read Materials File == ..\common\Soil\QCforEU\v28_vp-CAN_Mat_pl_GA00_Qxx.csv   
+   
+	ESTRY Control File == ..\runs\{{ domain }}_tunnel.ecf 							! linked ESTRY model control file
+	Maximum 1D Channels == 1000										! [ <mchan> | {100000} ]    Only used for allocating temporary space.  Memory required only for actual number of channels  (Virtual Pipes) allocated.
+  End Define
+
+  Define Event == I11  													! Virtual Pipes ON
+    Read Soils File == ..\common\Soil\QCforEU\CAN_Soil_GA00_Qxx.tsoilf
+    !Read Materials File == ..\common\Soil\Watersheds\{{ area }}xx\v28_vp-CAN_Mat_pl_GA00_{{ area }}xx.csv   
+    Read Materials File == ..\common\Soil\QCforEU\v28_vp-CAN_Mat_pl_GA00_Qxx.csv   
+	ESTRY Control File == ..\runs\{{ domain }}_GA00.ecf 							! linked ESTRY model control file
+	Maximum 1D Channels == 200000										! [ <mchan> | {100000} ]    Only used for allocating temporary space.  Memory required only for actual number of channels  (Virtual Pipes) allocated.
+  End Define
+    
+  Define Event == I20 
+    Read Soils File == ..\common\Soil\QCforEU\CAN_Soil_GA00_Qxx.tsoilf
+    !Read Materials File == ..\common\Soil\Watersheds\{{ area }}xx\v28-CAN_Mat_pl_GA00_{{ area }}xx.csv   
+    Read Materials File == ..\common\Soil\QCforEU\v28-CAN_Mat_pl_GA00_Qxx.csv   
+  End Define
+   
+  Define Event == I21  													! Virtual Pipes ON
+    Read Soils File == ..\common\Soil\QCforEU\CAN_Soil_GA00_Qxx.tsoilf
+    !Read Materials File == ..\common\Soil\Watersheds\{{ area }}xx\v28_vp-CAN_Mat_pl_GA00_{{ area }}xx.csv   
+    Read Materials File == ..\common\Soil\QCforEU\v28_vp-CAN_Mat_pl_GA00_Qxx.csv   
+	ESTRY Control File == ..\runs\{{ domain }}_GA00.ecf 							! linked ESTRY model control file
+	Maximum 1D Channels == 200000										! [ <mchan> | {100000} ]    Only used for allocating temporary space.  Memory required only for actual number of channels  (Virtual Pipes) allocated.
+  End Define
+    
+  Define Event == I50 
+    Read Soils File == ..\common\Soil\QCforEU\CAN_Soil_GA50_Qxx.tsoilf
+    !Read Materials File == ..\common\Soil\Watersheds\{{ area }}xx\v28-CAN_Mat_pl_GA50_{{ area }}xx.csv   
+    Read Materials File == ..\common\Soil\QCforEU\v28-CAN_Mat_pl_GA50_Qxx.csv   
+  End Define
+
+  Define Event == I52 
+    Read Soils File == ..\common\Soil\QCforEU\CAN_Soil_GA50_Qxx.tsoilf
+    !Read Materials File == ..\common\Soil\Watersheds\{{ area }}xx\v28-CAN_Mat_pl_GA50_{{ area }}xx.csv   
+    Read Materials File == ..\common\Soil\QCforEU\v28-CAN_Mat_pl_GA50_Qxx.csv   
+	ESTRY Control File == ..\runs\{{ domain }}_tunnel.ecf 							! linked ESTRY model control file
+	Maximum 1D Channels == 5000										! [ <mchan> | {100000} ]    Only used for allocating temporary space.  Memory required only for actual number of channels  (Virtual Pipes) allocated.
+  End Define
+
+  Define Event == I51  													! Virtual Pipes ON 50%, soil 50%
+    Read Soils File == ..\common\Soil\QCforEU\CAN_Soil_GA50_Qxx.tsoilf
+    !Read Materials File == ..\common\Soil\Watersheds\{{ area }}xx\v28_vp-CAN_Mat_pl_GA50_{{ area }}xx.csv   
+    Read Materials File == ..\common\Soil\QCforEU\v28_vp-CAN_Mat_pl_GA50_Qxx.csv   
+	ESTRY Control File == ..\runs\{{ domain }}_GA50.ecf 							! linked ESTRY model control file
+	Maximum 1D Channels == 200000										! [ <mchan> | {100000} ]    Only used for allocating temporary space.  Memory required only for actual number of channels  (Virtual Pipes) allocated.
+  End Define
+
+  
+  Define Event == I70 
+    Read Soils File == ..\common\Soil\QCforEU\CAN_Soil_GA50_Qxx.tsoilf
+    !Read Materials File == ..\common\Soil\Watersheds\{{ area }}xx\v28-CAN_Mat_pl_GA50_{{ area }}xx.csv   
+    Read Materials File == ..\common\Soil\QCforEU\v28-CAN_Mat_pl_GA50_Qxx.csv   
+  End Define
+   
+  Define Event == I71  													! Virtual Pipes ON
+    Read Soils File == ..\common\Soil\QCforEU\CAN_Soil_GA50_Qxx.tsoilf
+    !Read Materials File == ..\common\Soil\Watersheds\{{ area }}xx\v28_vp-CAN_Mat_pl_GA50_{{ area }}xx.csv   
+    Read Materials File == ..\common\Soil\QCforEU\v28_vp-CAN_Mat_pl_GA50_Qxx.csv   
+	ESTRY Control File == ..\runs\{{ domain }}_GA50.ecf 							! linked ESTRY model control file
+	Maximum 1D Channels == 200000										! [ <mchan> | {100000} ]    Only used for allocating temporary space.  Memory required only for actual number of channels  (Virtual Pipes) allocated.
+  End Define
+  
+  Define Event == I90 
+    Read Soils File == ..\common\Soil\QCforEU\CAN_Soil_GA50_Qxx.tsoilf
+    !Read Materials File == ..\common\Soil\Watersheds\{{ area }}xx\v28-CAN_Mat_pl_GA50_{{ area }}xx.csv   
+    Read Materials File == ..\common\Soil\QCforEU\v28-CAN_Mat_pl_GA50_Qxx.csv   
+  End Define
+  
+  Define Event == I91  													! Virtual Pipes ON
+    Read Soils File == ..\common\Soil\QCforEU\CAN_Soil_GA50_Qxx.tsoilf
+    !Read Materials File == ..\common\Soil\Watersheds\{{ area }}xx\v28_vp-CAN_Mat_pl_GA50_{{ area }}xx.csv   
+    Read Materials File == ..\common\Soil\QCforEU\v28_vp-CAN_Mat_pl_GA50_Qxx.csv   
+	ESTRY Control File == ..\runs\{{ domain }}_GA50.ecf 							! linked ESTRY model control file
+	Maximum 1D Channels == 200000										! [ <mchan> | {100000} ]    Only used for allocating temporary space.  Memory required only for actual number of channels  (Virtual Pipes) allocated.
+  End Define
+ 
+ HPC Infiltration Drying Approach == Method B     !! Method A for Non SGS models
+
+!____________________________________________________________________________________________
+!!BC DATABASE (bc_dbase file) setup based on inflow type events (e.g. R;L;C or any RF type)
+
+If Event == R
+  BC Database == ..\bc_dbase\bc_dbase_R.csv   !water put into polygon
+Else If Event == L
+  BC Database == ..\bc_dbase\bc_dbase_L.csv   !water put into stream
+Else If Event == C
+  BC Database == ..\bc_dbase\bc_dbase_C.csv   !water put into polygon and stream
+Else
+  BC Database == ..\bc_dbase\bc_dbase_rf.csv  !bc_dbase for RF
+End If
+!____________________________________________________________________________________________
+!! DEFINITION OF OTHER EVENTS
+
+!______________________________________________
+!! Fluvial RP
+  Define Event == f00005
+    BC Event Source == ~FlRP~ | f00005
+  End Define
+
+  Define Event == f00020
+    BC Event Source == ~FlRP~ | f00020
+  End Define
+
+  Define Event == f00050
+    BC Event Source == ~FlRP~ | f00050
+  End Define
+
+  Define Event == f00100
+    BC Event Source == ~FlRP~ | f00100
+  End Define
+
+  Define Event == f00200
+    BC Event Source == ~FlRP~ | f00200
+  End Define
+
+  Define Event == f00500
+    BC Event Source == ~FlRP~ | f00500
+  End Define
+
+  Define Event == f01000
+    BC Event Source == ~FlRP~ | f01000
+  End Define
+
+  Define Event == f10000
+    BC Event Source == ~FlRP~ | f10000
+  End Define
+
+!______________________________________________
+!! Flow Type (inflow put in the inflow polygon OR into the stream)
+  Define Event == R
+    BC Event Source == ~FlType~ | R
+  End Define
+
+  Define Event == L
+    BC Event Source == ~FlType~ | L
+  End Define
+
+  Define Event == C
+    BC Event Source == ~FlType~ | C
+  End Define
+
+!______________________________________________
+!! Rainfall RP
+  Define Event == r00005
+    BC Event Source == ~RfRP~ | r00005
+  End Define
+
+  Define Event == r00020
+    BC Event Source == ~RfRP~ | r00020
+  End Define
+
+  Define Event == r00050
+    BC Event Source == ~RfRP~ | r00050
+  End Define
+
+  Define Event == r00100
+    BC Event Source == ~RfRP~ | r00100
+  End Define
+
+  Define Event == r00200
+    BC Event Source == ~RfRP~ | r00200
+  End Define
+
+  Define Event == r00500
+    BC Event Source == ~RfRP~ | r00500
+  End Define
+
+  Define Event == r01000
+    BC Event Source == ~RfRP~ | r01000
+  End Define
+
+  Define Event == r10000
+    BC Event Source == ~RfRP~ | r10000
+  End Define
+
+  Define Event == r20000
+    BC Event Source == ~RfRP~ | r20000
+  End Define
+
+  Define Event == r50000
+    BC Event Source == ~RfRP~ | r50000
+  End Define
+
+!______________________________________________
+!! Rainfall Duration
+  Define Event == d1440
+    BC Event Source == ~RfDur~ | d1440
+  End Define
+
+
+
+!______________________________________________
+
+
