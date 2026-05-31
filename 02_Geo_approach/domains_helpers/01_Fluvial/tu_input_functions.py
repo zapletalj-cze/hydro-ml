@@ -1034,7 +1034,6 @@ def create_scenario_yaml(
     multi_scenario_path,
     project,
     peril_path,
-    project_start_yaml,
     tuflow_version,
     precision="iSP",
     auto_restart=False,
@@ -1042,7 +1041,6 @@ def create_scenario_yaml(
     time_shift=10,
     resolution="05",
     create_without_domain=False,
-    inflow_type=None,
     schema=None,
 ):
     import yaml as _yaml
@@ -1060,27 +1058,26 @@ def create_scenario_yaml(
         return False
 
     root_folder = os.path.join(workspace, domain)
+    # Key set / order mirrors valid_yaml_example.yaml (the schema FL03/FL04 consume).
+    # copy_to_server and machine are intentionally omitted: copy-to-server is
+    # disabled (FL03 test run + FL04 distribution replace it), and machine is set
+    # by FL04 only for manual restarts.
     domain_dict = {
-        "domain": domain,
         "data_source": root_folder,
-        "project": project,
-        "peril_path": peril_path,
-        "project_start_yaml": project_start_yaml,
-        "start_scenario": multi_scenario,
+        "domain": domain,
+        "manual_restart": False,
         "auto_restart": auto_restart,
         "max_time": max_time,
         "time_shift": time_shift,
-        "tuflow_version": tuflow_version,
-        "tuflow_precision": precision,
+        "project": project,
+        "peril_path": peril_path,
         "resolution": resolution,
         "schema": schema,
+        "tuflow_precision": precision,
+        "tuflow_version": tuflow_version,
+        "start_scenario": multi_scenario,
+        "test_run_done": False,
     }
-    if inflow_type is not None:
-        domain_dict["inflow_type"] = inflow_type
-        print(
-            f"... Inflow type is set to {inflow_type}, as specified in reference excel",
-            end="",
-        )
 
     scenario_csv = os.path.join(multi_scenario_path, f"{multi_scenario}.csv")
     df = pd.read_csv(scenario_csv)

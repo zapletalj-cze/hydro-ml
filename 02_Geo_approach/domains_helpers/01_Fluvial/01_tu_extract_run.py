@@ -32,13 +32,15 @@ from tu_input_functions import (
     write_tgc_file,
     zpts_features_order,
 )
-from tu_what_to_do import (
+from tu_data import (
     Q_peril,
     area,
+    area_key,
     code_buffer,
     copy_domain_to_ts_errlog,
     create_scenario_input_errlog,
     domain_directory_source,
+    list_zsh_reverse_domain,
     multi_scenario,
     multi_scenario_path,
     path_bc_dbase_inputs,
@@ -58,7 +60,6 @@ from tu_what_to_do import (
     yaml_peril_path,
     yaml_precision,
     yaml_project,
-    yaml_project_start_yaml,
     yaml_schema,
     yaml_time_shift,
 )
@@ -70,7 +71,6 @@ from ifgis.raster import (
 )
 from tu_input_sources import (
     DTMs_combination,
-    area_key,
     d_DTM_add_path,
     d_DTM_add_specification,
     d_DTM_path,
@@ -86,7 +86,6 @@ from tu_input_sources import (
     d_soil_draiange_path_default_rasters,
     d_soil_path,
     domains_list,
-    list_zsh_reverse_domain,
     tuflow_directory,
     tuflow_version_cfg,
     tuflow_yaml_path_cfg,
@@ -591,7 +590,6 @@ class TuflowInputs:
                 multi_scenario_path=multi_scenario_path,
                 project=yaml_project,
                 peril_path=yaml_peril_path,
-                project_start_yaml=yaml_project_start_yaml,
                 tuflow_version=tuflow_version_cfg,
                 precision=yaml_precision,
                 auto_restart=yaml_auto_restart,
@@ -599,7 +597,6 @@ class TuflowInputs:
                 time_shift=yaml_time_shift,
                 resolution=f"{main_resolution}m",
                 create_without_domain=False,
-                inflow_type=inflow_type,
                 schema=yaml_schema,
             )
 

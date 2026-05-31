@@ -42,7 +42,7 @@ OUTPUT_DIR = Path(
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
-# ------------------------------------------------------------
+# ------------------------------------------------------------  
 # Spatial reference
 # ------------------------------------------------------------
 TARGET_CRS = "EPSG:2180"  # PUWG 1992, Polish national grid
