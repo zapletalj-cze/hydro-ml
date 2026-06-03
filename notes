@@ -1,0 +1,154 @@
+POZNÁMKY PRO KONZULTACI
+========================
+Datum:  červen 2026
+Téma:   Výsledky kanálové ablace SegFormer (Cíl 1)
+
+
+1. STAV PRÁCE
+-------------
+- Dokončena kanálová ablace SegFormer: v1, v2, v3
+- 3 trénované modely + uložené predikce na val + test setu
+- Compare skript vyrobil souhrnné tabulky a grafy
+
+Varianty:
+  v1 (DSM)             — 1 kanál
+  v2 (DSM + TPI×3)     — 4 kanály
+  v3 (DSM + TPI + Canopy + Canopy SD) — 6 kanálů
+
+
+2. KLÍČOVÁ ČÍSLA (test set, mean per-patch)
+--------------------------------------------
+                 Dice    IoU    clDice   F1     Precision  Recall
+v1 (DSM)         0.306  0.214  0.534   0.306   0.267      0.432
+v2 (DSM+TPI)     0.308  0.216  0.544   0.308   0.272      0.427
+v3 (full)        0.404  0.312  0.690   0.404   0.374      0.478
+
+Zlepšení v3 vs v1:  Dice +32%, IoU +46%, clDice +29%
+
+Confusion matrix:
+  v1: TP=14.3M, FP=27.0M, FN=7.6M  (FPR 3.0%, FNR 35%)
+  v3: TP=15.9M, FP=11.6M, FN=6.0M  (FPR 1.3%, FNR 27%)
+  -> v3 sníží FP o 57% a FN o 21%
+
+
+3. KLÍČOVÝ NÁLEZ: TPI samostatně nepomáhá
+------------------------------------------
+v2 vs v1 (přidání TPI ×3):
+  Dice +0.7%, clDice +1.8%, recall dokonce -1.2%
+  -> TPI features prakticky nepřinášejí výrazné zlepšení
+
+v3 vs v2 (přidání Canopy + SD):
+  Dice +31%, clDice +27%
+  -> Veškerý zisk pochází z vegetačních kanálů
+
+HYPOTÉZA: SegFormer si geomorfometrické features (TPI-like)
+umí derivovat z raw DSM přes self-attention nad celým patchem.
+Vegetační info ale nemůže rekonstruovat (Canopy není v DSM),
+takže explicitní přidání má velkou hodnotu.
+
+OTÁZKY KE KONZULTACI:
+  a) Souhlasíte s hypotézou? Je obhajitelná v diplomce?
+  b) Bylo by smysluplné porovnat s U-Net (kde TPI features
+     by mohly pomáhat víc)?
+  c) Lze TPI ablaci interpretovat jako důkaz, že transformer
+     architektura nepotřebuje feature engineering?
+
+
+4. PER KATEGORIE (positive patches, Dice)
+------------------------------------------
+        S      M      L
+v1   0.39   0.44   0.57
+v2   0.39   0.45   0.58
+v3   0.50   0.58   0.70   <- monotónní L > M > S
+
+Větší řeky detekovány lépe — konzistentní s hypotézou
+(větší/vyšší hráze, lépe rozlišitelné na 30m DSM).
+
+
+5. PER REGION (positive patches, Dice)
+---------------------------------------
+        v1     v2     v3
+NL   0.605  0.608  0.707
+PL   0.406  0.406  0.527
+
+PL systematicky horší než NL napříč všemi variantami.
+Možné příčiny k diskuzi:
+  - BDOT10k label noise vs TOP10NL (více ručních dat?)
+  - Diverzita PL datasetu (6227 patches vs 765 NL)
+  - Geomorfologie lower Vistula (širší niva, složitější tvary)
+
+
+6. METODOLOGICKÁ VÝHRADA - musíte vědět
+----------------------------------------
+v1 a v2 trénovaly 100 epoch, v3 trénoval 175 epoch.
+Není to úplně férové porovnání.
+
+Z training curves:
+  v1 @ 100 epoch: val_score ~ 0.48
+  v2 @ 100 epoch: val_score ~ 0.50
+  v3 @ 100 epoch: val_score ~ 0.62
+  v3 @ 175 epoch: val_score ~ 0.66
+
+Tedy z absolutního skoku v3 vs v2 (+0.16):
+  ~0.12 patří aux kanálům
+  ~0.04 patří navíc epoch
+
+Aux kanály jsou stále dominantní faktor, ale ne výhradní.
+
+DOPORUČENÍ:
+  - V diplomce reportovat obě hodnoty (v3 @ 100 i @ 175)
+  - Z training_history.csv lze rekonstruovat metriky v3 v epoch 100
+    (best_val_score, val_dice, val_cldice) bez nutnosti znovu trénovat
+  - Pro úplnou férnost by bylo třeba dotrénovat v1/v2 do 175 epoch,
+    ale na to už není čas
+
+
+7. OTEVŘENÉ OTÁZKY K DALŠÍMU POSTUPU
+-------------------------------------
+
+Cíl 2: Buffer ablation (snížení FP přes corridor mask)
+  - Plán: ablovat velikost buferu 200/500/1000/2000/∞ m
+  - Implementačně levné — jen postprocessing
+  - Souhlas?
+
+Cíl 3: Loss ablation
+  - Tvůj současný setup už loss = BCE + Dice + clDice
+  - Ablace by byla: {BCE only, BCE+Dice, BCE+Dice+clDice}
+  - Vyžaduje 2 dodatečné tréninky (cca 30 hodin GPU)
+  - Souhlas? Nebo redukovat na 2 varianty {BCE+Dice, BCE+Dice+clDice}?
+
+SFINCS experiment (mimo původní cíle, navrhnutí v minulé konzultaci):
+  - Aplikovat detekované hráze v hydraulickém modelu
+  - Test impact: BDOT vs ML-detekované hráze vs žádné hráze
+  - 9 simulací (Q20/Q100/Q500 × 3 scénáře)
+  - Souhlas s plánem? Doporučená testovací oblast?
+
+Stacking / ensemble:
+  - Máme 3 modely s uloženými predikcemi (val + test)
+  - Možnost: prostý průměr predikcí (mean ensemble)
+  - Levné, žádný další trénink
+  - Stojí to za samostatnou kapitolu v diplomce?
+
+AOI inference (mimo dolní Vislu):
+  - Skripty hotové (inference_aoi.py + ensemble_aoi.py)
+  - Postprocessing fix proveden (walking algoritmus)
+  - Plán: spustit smoke test na malém AOI, pak větší rozsah
+
+
+8. ČASOVÝ PLÁN
+---------------
+Květen-červen 2026:
+  - Dokončit cíle 2, 3 (ablace)
+  - AOI inference + SFINCS (paralelně)
+  - Psaní diplomky průběžně po každém milníku
+
+Klíčové: nechat si minimálně 4 týdny čistě na psaní.
+Aktuální draft sekce 2.1-2.9 (literature review) rozpracovaný.
+
+
+9. PODKLADY K UKÁZÁNÍ
+----------------------
+- comparison_training_curves.png (overlay křivek)
+- comparison_final_metrics.png (bar chart)
+- comparison_by_category.png (S/M/L breakdown)
+- comparison_overall.csv (kompletní tabulka)
