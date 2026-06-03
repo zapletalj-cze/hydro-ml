@@ -296,7 +296,7 @@ def plot_final_metrics_bar(df_overall, output_path):
 
 
 def plot_breakdown_by_category(df_breakdown, output_path):
-    """Per-category Dice/clDice bars, positive patches only."""
+    """Per-category Dice / clDice / Precision / Recall bars, positive patches only."""
     df_pos = df_breakdown[df_breakdown["group"].str.endswith("positive")].copy()
     if len(df_pos) == 0:
         print(f"No 'positive' patch_type rows in breakdown, skipping {output_path}")
@@ -304,10 +304,12 @@ def plot_breakdown_by_category(df_breakdown, output_path):
 
     df_pos["category"] = df_pos["group"].str.split(" | ").str[0]
 
-    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
     for ax, metric, title in [
-        (axes[0], "mean_dice",   "Mean per-patch Dice"),
-        (axes[1], "mean_cldice", "Mean per-patch clDice"),
+        (axes[0, 0], "mean_dice",      "Mean per-patch Dice"),
+        (axes[0, 1], "mean_cldice",    "Mean per-patch clDice"),
+        (axes[1, 0], "mean_precision", "Mean per-patch Precision"),
+        (axes[1, 1], "mean_recall",    "Mean per-patch Recall"),
     ]:
         pivot = df_pos.pivot(index="category", columns="variant", values=metric)
         existing_cats = [c for c in ["S", "M", "L"] if c in pivot.index]
@@ -319,6 +321,127 @@ def plot_breakdown_by_category(df_breakdown, output_path):
         ax.set_title(f"{title}, by category (positive patches)")
         ax.grid(True, axis="y", alpha=0.3)
         ax.legend(loc="best")
+        ax.set_ylim(0, 1)
+
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=120, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {output_path}")
+
+
+def plot_distributions_comparison(runs, output_path, max_points_per_variant=1500):
+    """
+    Four-panel diagnostic plot:
+      [0,0] Boxplot of Dice + clDice distributions per variant (positive patches)
+      [0,1] Heatmap of mean Dice per (variant x category)
+      [1,0] Precision vs Recall scatter, color = variant
+      [1,1] Dice vs n_label_px scatter (log x), color = variant
+
+    Scatter panels are subsampled (max_points_per_variant) for clarity.
+    """
+    # Combine all variant test_results into one df with a variant column
+    all_results = []
+    for name, run in runs.items():
+        df = run["test_results"].copy()
+        df["variant"] = name
+        all_results.append(df)
+    combined = pd.concat(all_results, ignore_index=True)
+    pos = combined[combined["patch_type"] == "positive"].copy()
+
+    if len(pos) == 0:
+        print(f"No positive patches found, skipping {output_path}")
+        return
+
+    variant_names = list(runs.keys())
+    n_var = len(variant_names)
+    colors = plt.cm.tab10(np.linspace(0, 1, max(n_var, 3)))
+
+    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+
+    # ---- Panel [0,0]: Boxplot Dice + clDice per variant ----
+    ax = axes[0, 0]
+    positions_dice   = np.arange(n_var) * 3
+    positions_cldice = positions_dice + 1
+
+    data_dice   = [pos[pos["variant"] == v]["dice"].values   for v in variant_names]
+    data_cldice = [pos[pos["variant"] == v]["cldice"].values for v in variant_names]
+
+    bp_dice = ax.boxplot(data_dice, positions=positions_dice, widths=0.8, patch_artist=True,
+                         boxprops=dict(facecolor="tab:blue", alpha=0.5),
+                         medianprops=dict(color="black"))
+    bp_cld  = ax.boxplot(data_cldice, positions=positions_cldice, widths=0.8, patch_artist=True,
+                         boxprops=dict(facecolor="tab:green", alpha=0.5),
+                         medianprops=dict(color="black"))
+
+    ax.set_xticks(positions_dice + 0.5)
+    ax.set_xticklabels(variant_names, rotation=0)
+    ax.set_ylabel("Score")
+    ax.set_title("Distribution per variant (positive patches)")
+    ax.legend([bp_dice["boxes"][0], bp_cld["boxes"][0]], ["Dice", "clDice"], loc="lower right")
+    ax.grid(True, axis="y", alpha=0.3)
+    ax.set_ylim(0, 1)
+
+    # ---- Panel [0,1]: Heatmap variant x category (mean Dice) ----
+    ax = axes[0, 1]
+    pivot = pos.pivot_table(index="variant", columns="category", values="dice", aggfunc="mean")
+    existing_cats = [c for c in ["S", "M", "L"] if c in pivot.columns]
+    pivot = pivot.reindex(columns=existing_cats)
+    pivot = pivot.reindex([v for v in variant_names if v in pivot.index])
+
+    im = ax.imshow(pivot.values, aspect="auto", cmap="RdYlGn", vmin=0, vmax=1)
+    ax.set_xticks(range(len(pivot.columns)))
+    ax.set_xticklabels(pivot.columns)
+    ax.set_yticks(range(len(pivot.index)))
+    ax.set_yticklabels(pivot.index)
+    ax.set_title("Mean Dice (positive), variant x category")
+
+    # Cell annotations
+    for i in range(len(pivot.index)):
+        for j in range(len(pivot.columns)):
+            val = pivot.values[i, j]
+            if not np.isnan(val):
+                color = "black" if val > 0.5 else "white"
+                ax.text(j, i, f"{val:.3f}", ha="center", va="center",
+                        color=color, fontweight="bold")
+
+    plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+
+    # ---- Panel [1,0]: Precision vs Recall scatter ----
+    ax = axes[1, 0]
+    rng = np.random.default_rng(42)
+    for variant_name, color in zip(variant_names, colors):
+        v_data = pos[pos["variant"] == variant_name]
+        if len(v_data) > max_points_per_variant:
+            v_data = v_data.sample(max_points_per_variant, random_state=42)
+        ax.scatter(v_data["recall"], v_data["precision"],
+                   alpha=0.35, s=12, color=color, label=variant_name, edgecolors="none")
+
+    ax.set_xlabel("Recall")
+    ax.set_ylabel("Precision")
+    ax.set_title(f"Precision vs Recall per patch (positive, subsampled to {max_points_per_variant}/variant)")
+    ax.legend(loc="best")
+    ax.grid(True, alpha=0.3)
+    ax.set_xlim(-0.02, 1.02)
+    ax.set_ylim(-0.02, 1.02)
+
+    # ---- Panel [1,1]: Dice vs n_label_px scatter ----
+    ax = axes[1, 1]
+    for variant_name, color in zip(variant_names, colors):
+        v_data = pos[pos["variant"] == variant_name]
+        if len(v_data) > max_points_per_variant:
+            v_data = v_data.sample(max_points_per_variant, random_state=42)
+        # Filter out zeros for log scale
+        v_data = v_data[v_data["n_label_px"] > 0]
+        ax.scatter(v_data["n_label_px"], v_data["dice"],
+                   alpha=0.35, s=12, color=color, label=variant_name, edgecolors="none")
+
+    ax.set_xscale("log")
+    ax.set_xlabel("Number of label pixels (log scale)")
+    ax.set_ylabel("Dice")
+    ax.set_title(f"Dice vs label size (subsampled to {max_points_per_variant}/variant)")
+    ax.legend(loc="best")
+    ax.grid(True, alpha=0.3)
+    ax.set_ylim(-0.02, 1.02)
 
     plt.tight_layout()
     plt.savefig(output_path, dpi=120, bbox_inches="tight")
@@ -362,6 +485,7 @@ def main():
     plot_training_curves_overlay(runs,       OUTPUT_DIR / "comparison_training_curves.png")
     plot_final_metrics_bar(df_overall,       OUTPUT_DIR / "comparison_final_metrics.png")
     plot_breakdown_by_category(df_by_cat,    OUTPUT_DIR / "comparison_by_category.png")
+    plot_distributions_comparison(runs,      OUTPUT_DIR / "comparison_distributions.png")
 
     # Console summary
     print("\n" + "=" * 70)
