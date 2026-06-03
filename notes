@@ -16,6 +16,96 @@ Varianty:
   v3 (DSM + TPI + Canopy + Canopy SD) — 6 kanálů
 
 
+Co konkrétně se ti pravděpodobně objeví ve tvých datech
+Bez spuštění to neuhádnu přesně, ale očekávám:
+Panel [0,0] Boxplot: medián Dice pro v1/v2 kolem 0.25, pro v3 kolem 0.4. Široké boxy indikují velký rozptyl mezi patches — bude tam asi 25-30% patches s Dice = 0 (model úplně selhal) a 25% s Dice > 0.6 (čisté detekce). To je důležité vidět.
+Panel [1,0] PR scatter: očekávám bimodální clusters — část patches v rohu (0,0) = úplné selhání, část v rohu (1,1) = dokonalá detekce. Mezistupně budou rozmazané. v3 by měl mít víc bodů blízko (1,1) než v1/v2.
+Panel [1,1] Dice vs label_px: Dice by měl monotonně růst s velikostí labelu (větší hráze = lepší detekce). Pokud uvidíš plateau po určité velikosti, je tam nějaké saturation.
+Panel [0,1] Heatmapa: jasně vidíš progresi S < M < L a v1 ≈ v2 < v3. Pěkné pro vložení do diplomky jako shrnutí jedním obrázkem.
+
+
+DEFINICE METRIK
+================
+
+DICE (= F1 score pro binární masky)
+   Dice = (2 · TP) / (2 · TP + FP + FN)
+   Co měří: Překryv predikce a labelu, pixel po pixelu.
+   Rozsah: 0 až 1.
+   Citlivost: vysoká na geometrické posuny, tloušťku, fragmentaci.
+   Typické hodnoty u tebe: 0.30 (v1) až 0.40 (v3).
+
+
+IOU (Intersection over Union, Jaccard)
+   IoU = TP / (TP + FP + FN)
+   Co měří: Stejné jako Dice, ale matematicky přísnější.
+   Vztah k Dice: IoU = Dice / (2 - Dice). IoU je vždy nižší než Dice.
+   Rozsah: 0 až 1.
+   Typické hodnoty u tebe: 0.21 (v1) až 0.31 (v3).
+
+
+CLDICE (centerline Dice)
+   clDice = 2 · tprec · trec / (tprec + trec)
+       tprec = |skel(pred) ∩ label| / |skel(pred)|
+       trec  = |pred ∩ skel(label)| / |skel(label)|
+   Co měří: Dice na morfologických kosterách (skeletons), ne na plných maskách.
+            Měří topologickou shodu — jestli linie predikce odpovídá linii labelu,
+            nezávisle na tloušťce nebo drobném posunu.
+   Rozsah: 0 až 1.
+   Citlivost: nízká na geometrický posun, vysoká na fragmentaci.
+   Typické hodnoty u tebe: 0.53 (v1) až 0.69 (v3).
+   Reference: Shit et al. 2021, CVPR.
+
+
+F1 SCORE
+   F1 = 2 · precision · recall / (precision + recall)
+   Co měří: Harmonický průměr precision a recall.
+            Matematicky identický s Dice pro binární masky.
+   Rozsah: 0 až 1.
+   Typické hodnoty u tebe: 0.30 (v1) až 0.40 (v3). Identické s Dice.
+
+
+PRECISION (přesnost)
+   Precision = TP / (TP + FP)
+   Co měří: Z pixelů, které model označil jako hráz, kolik bylo skutečně hráz.
+            Vysoká precision = model málo plete.
+   Rozsah: 0 až 1.
+   Typické hodnoty u tebe: 0.27 (v1) až 0.37 (v3).
+
+
+RECALL (úplnost, citlivost)
+   Recall = TP / (TP + FN)
+   Co měří: Z pixelů, které skutečně jsou hráz, kolik model našel.
+            Vysoký recall = model málo přehlíží.
+   Rozsah: 0 až 1.
+   Typické hodnoty u tebe: 0.43 (v1) až 0.48 (v3).
+
+
+VZTAHY MEZI METRIKAMI
+======================
+   Dice  ≡  F1                                       (matematicky stejné)
+   Dice  =  2·IoU / (1 + IoU)                        (Dice je shovívavější)
+   F1    =  2·precision·recall / (precision+recall)  (harmonický průměr)
+
+   Precision a recall jsou v tension:
+     - Threshold nahoru → precision ↑, recall ↓
+     - Threshold dolů   → precision ↓, recall ↑
+
+   Dice/F1 balancuje obě.
+   clDice měří úplně jinou věc (topologii, ne pixely).
+
+
+SHRNUTÍ PRO V3 MODEL
+=====================
+   Precision ~0.30  — z detekovaných pixelů je 30% správně, 70% false positive
+   Recall    ~0.45  — najde 45% skutečných pixelů hráze
+   Dice/F1   ~0.40  — harmonický průměr obojího
+   IoU       ~0.30  — přísnější verze Dice
+   clDice    ~0.69  — topologicky správně detekuje linie, jen geometricky nepřesně
+
+   Příběh: Model detekuje přibližnou geometrii hrází (clDice 0.69 je solidní),
+   ale s posunem 1-2 pixely, což sráží pixel-level metriky (Dice 0.40).
+   Pro vektorovou reprezentaci je tato nepřesnost zanedbatelná.
+
 2. KLÍČOVÁ ČÍSLA (test set, mean per-patch)
 --------------------------------------------
                  Dice    IoU    clDice   F1     Precision  Recall
