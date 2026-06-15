@@ -49,18 +49,17 @@ from tqdm import tqdm
 # ============================================================
 
 # --- User-provided paths ---
-AOI_PATH         = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\aoi_inference\aoi_polygon.gpkg")
-DSM_PATH         = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\source\pl\copernicus_dsm_pl.tif")
-CANOPY_PATH      = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\source\pl\eth_canopy_height_pl.tif")
-CANOPY_SD_PATH   = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\source\pl\eth_canopy_sd_pl.tif")
-MERIT_PATH       = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\source\merit\merit_hydro_pl.gpkg")
-MERIT_LAYER      = "reaches"
+AOI_PATH         = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\AOI_Poland.gpkg")
+DSM_PATH         = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\COP_DSM\COP_DSM_Poland_2180_c.tif")
+CANOPY_PATH      = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\data\CanopyHeight\Poland\reprojected\ETH_GlobalCanopyHeight_10m_2020_Poland_Map_2180.tif")
+CANOPY_SD_PATH   = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\data\CanopyHeight\Poland\reprojected\ETH_GlobalCanopyHeight_10m_2020_Poland_Map_SD_2180.tif")
+MERIT_PATH       = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\data\riv_pfaf_2x_MERIT_Hydro_v07_Basin_flip_2180.gpkg")
 MERIT_UPAREA_COL = "uparea"
 
-CHECKPOINT_PATH  = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v02_segformer\best_model.pt")
-NORM_STATS_PATH  = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v02_segformer\norm_stats.json")
+CHECKPOINT_PATH  = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v03_segformer_v3_dsm_tpi_canopyheight\best_model.pt")
+NORM_STATS_PATH  = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v03_segformer_v3_dsm_tpi_canopyheight\norm_stats.json")
 
-OUTPUT_GPKG      = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\inference_output\detected_levees.gpkg")
+OUTPUT_GPKG      = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v03_segformer_v3_dsm_tpi_canopyheight\interference_outputs\detected_levees.gpkg")
 
 # Probability raster output (intermediate result, used by ensemble script).
 # Derived from OUTPUT_GPKG path with _prob.tif suffix.
@@ -156,7 +155,7 @@ def build_river_corridor(aoi_geom):
     aoi_gdf = gpd.GeoDataFrame(geometry=[aoi_geom], crs=f"EPSG:{CRS_TARGET}")
     aoi_bbox = aoi_geom.bounds  # (minx, miny, maxx, maxy)
 
-    merit = gpd.read_file(MERIT_PATH, layer=MERIT_LAYER, bbox=aoi_bbox)
+    merit = gpd.read_file(MERIT_PATH, bbox=aoi_bbox)
     if merit.crs.to_epsg() != CRS_TARGET:
         merit = merit.to_crs(epsg=CRS_TARGET)
 
