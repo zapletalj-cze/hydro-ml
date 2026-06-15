@@ -86,9 +86,23 @@ DEVICE           = "cuda" if torch.cuda.is_available() else "cpu"
 # --- Postprocessing constants ---
 PROB_THRESHOLD       = 0.5
 MIN_COMPONENT_PX     = 50
-CLOSING_RADIUS_PX    = 1
+CLOSING_RADIUS_PX    = 3     # bridges small along-line gaps before skeletonization
 MIN_LINE_LENGTH_M    = 50
 SPUR_PRUNE_PX        = 5     # prune skeleton spurs shorter than this (removes false junctions)
+
+# Corridor masking in postprocessing. Patches already run only where their CENTER
+# is in the corridor, so each patch extends ~1.28 km beyond it. Re-masking the
+# stitched raster by the (narrow) corridor clips valid levee detections that sit
+# on the floodplain edge, further than RIVER_BUFFER_M from the channel. Set False
+# to keep the full detected geometry, or widen POSTPROCESS_BUFFER_M.
+APPLY_CORRIDOR_MASK     = False
+POSTPROCESS_BUFFER_M    = 500    # only used if APPLY_CORRIDOR_MASK is True
+
+# Vector-space gap bridging: reconnect line endpoints that are close and roughly
+# collinear (bridges breaks where the band briefly drops below threshold).
+BRIDGE_GAPS          = True
+BRIDGE_MAX_GAP_M     = 100   # max endpoint distance to bridge
+BRIDGE_MAX_ANGLE_DEG = 45    # max deviation from collinear
 
 
 # ============================================================
@@ -612,43 +626,124 @@ def skeleton_to_linestrings(skeleton_mask, geotransform):
     return lines
 
 
+def bridge_line_gaps(lines, max_gap_m, max_angle_deg):
+    """
+    Reconnect LineStrings whose endpoints are close and roughly collinear.
+
+    A levee whose probability briefly dips below the threshold produces two
+    separate skeleton pieces with a small gap. This step rejoins them when the
+    gap is short and the two ends point at each other (within max_angle_deg),
+    so a single levee is not reported as several fragments.
+    """
+    if len(lines) < 2:
+        return lines
+
+    segs = list(lines)
+    changed = True
+    while changed:
+        changed = False
+        best = None   # (gap, i, j, flip_i, flip_j)
+
+        for i in range(len(segs)):
+            ci = np.asarray(segs[i].coords)
+            for j in range(i + 1, len(segs)):
+                cj = np.asarray(segs[j].coords)
+                # OUTWARD direction at an endpoint, estimated over several vertices
+                # for stability (a single skeleton pixel pair is too noisy).
+                def out_dir_start(coords):
+                    k = min(len(coords) - 1, 10)
+                    return coords[0] - coords[k]
+                def out_dir_end(coords):
+                    k = min(len(coords) - 1, 10)
+                    return coords[-1] - coords[-1 - k]
+
+                candidates = [
+                    (ci[-1], out_dir_end(ci),   cj[0],  out_dir_start(cj), False, False),
+                    (ci[-1], out_dir_end(ci),   cj[-1], out_dir_end(cj),   False, True),
+                    (ci[0],  out_dir_start(ci), cj[0],  out_dir_start(cj), True,  False),
+                    (ci[0],  out_dir_start(ci), cj[-1], out_dir_end(cj),   True,  True),
+                ]
+                for pi, di, pj, dj, flip_i, flip_j in candidates:
+                    gap = float(np.hypot(*(pi - pj)))
+                    if gap == 0 or gap > max_gap_m:
+                        continue
+                    bridge = pj - pi
+                    bn = bridge / (np.hypot(*bridge) + 1e-9)
+                    din = di / (np.hypot(*di) + 1e-9)
+                    djn = dj / (np.hypot(*dj) + 1e-9)
+                    # i's outward end points toward j (bn); j's outward end points toward i (-bn)
+                    ang_i = np.degrees(np.arccos(np.clip(np.dot(din,  bn), -1, 1)))
+                    ang_j = np.degrees(np.arccos(np.clip(np.dot(djn, -bn), -1, 1)))
+                    if ang_i <= max_angle_deg and ang_j <= max_angle_deg:
+                        if best is None or gap < best[0]:
+                            best = (gap, i, j, flip_i, flip_j)
+
+        if best is not None:
+            _, i, j, flip_i, flip_j = best
+            ci = list(segs[i].coords)
+            cj = list(segs[j].coords)
+            if flip_i:
+                ci = ci[::-1]
+            if flip_j:
+                cj = cj[::-1]
+            merged = LineString(ci + cj)   # explicit bridge across the gap
+            segs = [s for k, s in enumerate(segs) if k not in (i, j)]
+            segs.append(merged)
+            changed = True
+
+    return segs
+
+
 def postprocess_to_vector(prob_raster, corridor_mask, geotransform):
     """
     Full postprocessing chain:
-        threshold -> mask by corridor -> cleanup -> skeletonize -> vectorize -> filter length
+        threshold -> (optional corridor mask) -> cleanup -> skeletonize
+        -> vectorize -> bridge gaps -> filter length
+    Prints diagnostics at each stage so it is clear where geometry is lost.
     Returns a GeoDataFrame of detected levee centerlines in EPSG:2180.
     """
-    binary = (prob_raster > PROB_THRESHOLD) & corridor_mask
+    above = prob_raster > PROB_THRESHOLD
+    print(f"    pixels > {PROB_THRESHOLD}: {above.sum():,}")
 
-    # Closing to bridge small gaps before skeletonization
+    if APPLY_CORRIDOR_MASK:
+        binary = above & corridor_mask
+        print(f"    after corridor mask:  {binary.sum():,} "
+              f"({100*binary.sum()/max(above.sum(),1):.0f}% kept)")
+    else:
+        binary = above
+
     if CLOSING_RADIUS_PX > 0:
         binary = binary_closing(binary, disk(CLOSING_RADIUS_PX))
 
-    # Drop tiny false-positive blobs
     binary = remove_small_objects(binary, min_size=MIN_COMPONENT_PX, connectivity=2)
+    _, n_comp = label_components(binary, connectivity=2, return_num=True)
+    print(f"    binary components:    {n_comp}")
 
     if binary.sum() == 0:
-        return gpd.GeoDataFrame(
-            {"length_m": []}, geometry=[], crs=f"EPSG:{CRS_TARGET}"
-        )
+        return gpd.GeoDataFrame({"length_m": []}, geometry=[], crs=f"EPSG:{CRS_TARGET}")
 
     skel = skeletonize(binary)
-
     lines = skeleton_to_linestrings(skel, geotransform)
-    if not lines:
-        return gpd.GeoDataFrame(
-            {"length_m": []}, geometry=[], crs=f"EPSG:{CRS_TARGET}"
-        )
+    print(f"    raw lines:            {len(lines)}")
 
-    # Filter short lines
+    if not lines:
+        return gpd.GeoDataFrame({"length_m": []}, geometry=[], crs=f"EPSG:{CRS_TARGET}")
+
+    if BRIDGE_GAPS:
+        n_before = len(lines)
+        lines = bridge_line_gaps(lines, BRIDGE_MAX_GAP_M, BRIDGE_MAX_ANGLE_DEG)
+        print(f"    after gap bridging:   {len(lines)} (was {n_before})")
+
+    n_before = len(lines)
     lines = [ln for ln in lines if ln.length >= MIN_LINE_LENGTH_M]
+    print(f"    after length filter:  {len(lines)} (removed {n_before - len(lines)} "
+          f"shorter than {MIN_LINE_LENGTH_M} m)")
 
     gdf = gpd.GeoDataFrame(
         {"length_m": [ln.length for ln in lines]},
         geometry=lines, crs=f"EPSG:{CRS_TARGET}",
     )
     return gdf
-
 
 # ============================================================
 # MAIN
