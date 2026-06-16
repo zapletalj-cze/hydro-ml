@@ -486,44 +486,128 @@ def save_prob_raster_geotiff(prob, geotransform, output_path):
 # the length filter. This is robust against the fragmentation and spurs that
 # plague naive skeleton-walking, and is simple to state and defend.
 
-def _skeleton_graph(skel_mask):
+def _neighbors(p, pts):
+    """8-connectivity neighbours of pixel p present in the set pts."""
+    r, c = p
+    out = []
+    for dr in (-1, 0, 1):
+        for dc in (-1, 0, 1):
+            if dr == 0 and dc == 0:
+                continue
+            q = (r + dr, c + dc)
+            if q in pts:
+                out.append(q)
+    return out
+
+
+def _degree_map(skel_mask):
+    """Vectorized 8-connectivity degree of each skeleton pixel (0 elsewhere)."""
+    s = skel_mask.astype(np.uint8)
+    p = np.pad(s, 1)
+    nb = (p[:-2, :-2] + p[:-2, 1:-1] + p[:-2, 2:] +
+          p[1:-1, :-2] +               p[1:-1, 2:] +
+          p[2:, :-2] + p[2:, 1:-1] + p[2:, 2:])
+    return nb * s
+
+
+def _chain_length_px(path):
+    """Euclidean length (in pixels) of an ordered pixel path."""
+    return sum(np.hypot(path[k + 1][0] - path[k][0], path[k + 1][1] - path[k][1])
+               for k in range(len(path) - 1))
+
+
+def _build_reduced_graph(pts, deg, nodes):
     """
-    Build an 8-connectivity graph from a skeleton mask.
-    Nodes are (row, col) pixels; edge weights are Euclidean pixel distances
-    (1 for orthogonal, sqrt(2) for diagonal neighbours).
+    Build a REDUCED skeleton graph for fast longest-path extraction.
+
+    Nodes are skeleton pixels that are endpoints (degree 1) or junctions
+    (degree >= 3). Edges are the degree-2 pixel chains connecting them, stored
+    with their full pixel path and Euclidean length. This shrinks the graph from
+    one node per skeleton pixel (hundreds of thousands) to one node per junction
+    (hundreds), so Dijkstra on it is effectively instant regardless of AOI size.
+
+    Returns (graph, loop_paths) where loop_paths are self-closing chains that
+    start and end at the same node (handled separately, not added as edges).
     """
     G = nx.Graph()
-    pts = set(map(tuple, np.argwhere(skel_mask).tolist()))
-    G.add_nodes_from(pts)
-    for (r, c) in pts:
-        for dr in (-1, 0, 1):
-            for dc in (-1, 0, 1):
-                if dr == 0 and dc == 0:
-                    continue
-                nb = (r + dr, c + dc)
-                if nb in pts and not G.has_edge((r, c), nb):
-                    w = 1.0 if (dr == 0 or dc == 0) else 1.4142135623730951
-                    G.add_edge((r, c), nb, weight=w)
-    return G
+    G.add_nodes_from(nodes)
+    loop_paths = []
+    visited_starts = set()
+
+    for node in nodes:
+        for nb in _neighbors(node, pts):
+            if (node, nb) in visited_starts:
+                continue
+            # Walk the degree-2 chain from node until the next node
+            path = [node, nb]
+            prev, cur = node, nb
+            while deg.get(cur, 0) == 2:
+                nxts = [n for n in _neighbors(cur, pts) if n != prev]
+                if not nxts:
+                    break
+                prev, cur = cur, nxts[0]
+                path.append(cur)
+            end = path[-1]
+            visited_starts.add((node, nb))
+            if len(path) >= 2:
+                visited_starts.add((end, path[-2]))
+
+            length = _chain_length_px(path)
+            if node == end:
+                loop_paths.append(path)          # self-loop chain, emit separately
+                continue
+            if G.has_edge(node, end) and G[node][end]["weight"] >= length:
+                continue                         # keep the longer of parallel chains
+            G.add_edge(node, end, weight=length, path=path)
+
+    return G, loop_paths
+
+
+def _walk_loop(pts):
+    """Walk a pure loop component (all pixels degree 2) into an ordered path."""
+    start = next(iter(pts))
+    path = [start]
+    visited = {start}
+    cur = start
+    while True:
+        nxt = [n for n in _neighbors(cur, pts) if n not in visited]
+        if not nxt:
+            break
+        cur = nxt[0]
+        visited.add(cur)
+        path.append(cur)
+    return path
 
 
 def _longest_path_nodes(G):
     """
-    Approximate the longest shortest-path (graph diameter) via double Dijkstra:
-    from an arbitrary node find the farthest node A, then from A find the
-    farthest node B; the A-B shortest path is (near) the diameter. Exact for
-    trees; skeletons are nearly trees, so any small loop error is negligible.
-    Returns the ordered list of nodes on the path.
+    Longest weighted shortest-path (graph diameter) via double Dijkstra:
+    from an arbitrary node find the farthest node A, then from A the farthest
+    node B; the A-B path is (near) the diameter. Exact for trees; reduced
+    skeleton graphs are nearly trees, so any loop error is negligible.
+    Returns (ordered node list, path length).
     """
     start = next(iter(G.nodes))
-    lengths_1 = nx.single_source_dijkstra_path_length(G, start, weight="weight")
-    node_a = max(lengths_1, key=lengths_1.get)
-
+    l1 = nx.single_source_dijkstra_path_length(G, start, weight="weight")
+    node_a = max(l1, key=l1.get)
     paths_a = nx.single_source_dijkstra_path(G, node_a, weight="weight")
     lengths_a = nx.single_source_dijkstra_path_length(G, node_a, weight="weight")
     node_b = max(lengths_a, key=lengths_a.get)
+    return paths_a[node_b], lengths_a[node_b]
 
-    return paths_a[node_b], lengths_a[node_b]   # (node list, path length in px)
+
+def _reconstruct(G, node_path):
+    """Concatenate edge pixel-paths along a node sequence into one pixel path."""
+    pixels = []
+    for a, b in zip(node_path[:-1], node_path[1:]):
+        seg = list(G[a][b]["path"])
+        if seg[0] != a:
+            seg = seg[::-1]
+        if pixels and pixels[-1] == seg[0]:
+            pixels.extend(seg[1:])
+        else:
+            pixels.extend(seg)
+    return pixels
 
 
 def _path_to_linestring(path_nodes, geotransform):
@@ -539,42 +623,62 @@ def _path_to_linestring(path_nodes, geotransform):
 
 def extract_centerlines(component_skeleton, geotransform, min_length_m):
     """
-    Iterative longest-path extraction for one connected component's skeleton.
+    Iterative longest-path extraction for one connected component's skeleton,
+    operating on the REDUCED graph (junctions/endpoints as nodes).
 
     Repeatedly:
         1. take the longest path (diameter) of the current graph,
         2. emit it if it is at least min_length_m,
-        3. remove its nodes; the remainder may split into sub-graphs (branches),
-        4. process those sub-graphs the same way.
+        3. remove its edges; the remainder may split into sub-graphs (branches),
+        4. process those the same way.
 
     Short spurs are naturally excluded: once the main path is removed, leftover
-    spur fragments are shorter than min_length_m and dropped.
+    branches shorter than min_length_m are dropped.
     """
     min_length_px = min_length_m / abs(geotransform[1])
+
+    pts = set(map(tuple, np.argwhere(component_skeleton).tolist()))
+    if len(pts) < 2:
+        return []
+
+    deg_map = _degree_map(component_skeleton)
+    deg = {(r, c): int(deg_map[r, c]) for (r, c) in pts}
+    nodes = {p for p in pts if deg[p] != 2}
+
     lines = []
 
-    G_full = _skeleton_graph(component_skeleton)
-    # Work queue of connected sub-graphs
-    queue = [G_full.subgraph(c).copy() for c in nx.connected_components(G_full)]
+    # Pure loop component (no endpoints or junctions)
+    if not nodes:
+        path = _walk_loop(pts)
+        if _chain_length_px(path) >= min_length_px:
+            lines.append(_path_to_linestring(path, geotransform))
+        return lines
 
+    G, loop_paths = _build_reduced_graph(pts, deg, nodes)
+
+    for lp in loop_paths:
+        if _chain_length_px(lp) >= min_length_px:
+            lines.append(_path_to_linestring(lp, geotransform))
+
+    queue = [G.subgraph(c).copy() for c in nx.connected_components(G)]
     while queue:
-        G = queue.pop()
-        if G.number_of_nodes() < 2:
+        sub = queue.pop()
+        if sub.number_of_edges() == 0:
             continue
 
-        path_nodes, path_len_px = _longest_path_nodes(G)
+        node_path, total_len = _longest_path_nodes(sub)
+        if total_len < min_length_px:
+            continue
 
-        if path_len_px < min_length_px:
-            continue   # whole remaining sub-graph is shorter than a levee; drop
+        lines.append(_path_to_linestring(_reconstruct(sub, node_path), geotransform))
 
-        lines.append(_path_to_linestring(path_nodes, geotransform))
-
-        # Remove the extracted path; re-queue any remaining branches
-        G.remove_nodes_from(path_nodes)
-        for c in nx.connected_components(G):
-            sub = G.subgraph(c).copy()
-            if sub.number_of_nodes() >= 2:
-                queue.append(sub)
+        for a, b in zip(node_path[:-1], node_path[1:]):
+            if sub.has_edge(a, b):
+                sub.remove_edge(a, b)
+        for c in nx.connected_components(sub):
+            s2 = sub.subgraph(c).copy()
+            if s2.number_of_edges() >= 1:
+                queue.append(s2)
 
     return lines
 

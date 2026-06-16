@@ -27,6 +27,7 @@ from pathlib import Path
 
 import numpy as np
 from scipy.ndimage import uniform_filter
+from scipy.spatial import cKDTree
 import torch
 import torch.nn as nn
 import segmentation_models_pytorch as smp
@@ -634,64 +635,104 @@ def bridge_line_gaps(lines, max_gap_m, max_angle_deg):
     separate skeleton pieces with a small gap. This step rejoins them when the
     gap is short and the two ends point at each other (within max_angle_deg),
     so a single levee is not reported as several fragments.
+
+    Implementation: endpoints are indexed with a KD-tree, so only nearby pairs
+    are examined (O(n log n + k)). Each endpoint is joined to at most one other
+    (greedy, shortest gap first), then chains of joined segments are walked into
+    single LineStrings. This avoids the O(n^3) all-pairs rescan of the naive
+    version, which hangs on AOIs with thousands of detected lines.
     """
     if len(lines) < 2:
         return lines
 
-    segs = list(lines)
-    changed = True
-    while changed:
-        changed = False
-        best = None   # (gap, i, j, flip_i, flip_j)
+    coords_list = [np.asarray(ln.coords) for ln in lines]
+    n = len(lines)
 
-        for i in range(len(segs)):
-            ci = np.asarray(segs[i].coords)
-            for j in range(i + 1, len(segs)):
-                cj = np.asarray(segs[j].coords)
-                # OUTWARD direction at an endpoint, estimated over several vertices
-                # for stability (a single skeleton pixel pair is too noisy).
-                def out_dir_start(coords):
-                    k = min(len(coords) - 1, 10)
-                    return coords[0] - coords[k]
-                def out_dir_end(coords):
-                    k = min(len(coords) - 1, 10)
-                    return coords[-1] - coords[-1 - k]
+    # Endpoint table: two per line (start = port 0, end = port 1)
+    ep_coords = np.empty((2 * n, 2), dtype=float)
+    ep_ids = []
+    for i, cs in enumerate(coords_list):
+        ep_coords[2 * i]     = cs[0]
+        ep_coords[2 * i + 1] = cs[-1]
+        ep_ids.append((i, 0))
+        ep_ids.append((i, 1))
 
-                candidates = [
-                    (ci[-1], out_dir_end(ci),   cj[0],  out_dir_start(cj), False, False),
-                    (ci[-1], out_dir_end(ci),   cj[-1], out_dir_end(cj),   False, True),
-                    (ci[0],  out_dir_start(ci), cj[0],  out_dir_start(cj), True,  False),
-                    (ci[0],  out_dir_start(ci), cj[-1], out_dir_end(cj),   True,  True),
-                ]
-                for pi, di, pj, dj, flip_i, flip_j in candidates:
-                    gap = float(np.hypot(*(pi - pj)))
-                    if gap == 0 or gap > max_gap_m:
-                        continue
-                    bridge = pj - pi
-                    bn = bridge / (np.hypot(*bridge) + 1e-9)
-                    din = di / (np.hypot(*di) + 1e-9)
-                    djn = dj / (np.hypot(*dj) + 1e-9)
-                    # i's outward end points toward j (bn); j's outward end points toward i (-bn)
-                    ang_i = np.degrees(np.arccos(np.clip(np.dot(din,  bn), -1, 1)))
-                    ang_j = np.degrees(np.arccos(np.clip(np.dot(djn, -bn), -1, 1)))
-                    if ang_i <= max_angle_deg and ang_j <= max_angle_deg:
-                        if best is None or gap < best[0]:
-                            best = (gap, i, j, flip_i, flip_j)
+    # Only endpoint pairs within max_gap_m are candidate joins
+    tree = cKDTree(ep_coords)
+    pairs = tree.query_pairs(r=max_gap_m)
 
-        if best is not None:
-            _, i, j, flip_i, flip_j = best
-            ci = list(segs[i].coords)
-            cj = list(segs[j].coords)
-            if flip_i:
-                ci = ci[::-1]
-            if flip_j:
-                cj = cj[::-1]
-            merged = LineString(ci + cj)   # explicit bridge across the gap
-            segs = [s for k, s in enumerate(segs) if k not in (i, j)]
-            segs.append(merged)
-            changed = True
+    def out_dir(line_idx, end, k=10):
+        # OUTWARD direction at an endpoint, averaged over up to k vertices for
+        # stability (a single skeleton pixel pair is too noisy).
+        cs = coords_list[line_idx]
+        kk = min(len(cs) - 1, k)
+        return cs[0] - cs[kk] if end == 0 else cs[-1] - cs[-1 - kk]
 
-    return segs
+    # Build angle-checked candidate joins
+    candidates = []
+    for a, b in pairs:
+        ia, ea = ep_ids[a]
+        ib, eb = ep_ids[b]
+        if ia == ib:
+            continue                       # ignore a line's own two ends
+        pa, pb = ep_coords[a], ep_coords[b]
+        gap = float(np.hypot(*(pa - pb)))
+        if gap == 0:
+            gap = 1e-6
+        bn = (pb - pa) / (gap + 1e-9)
+        da, db = out_dir(ia, ea), out_dir(ib, eb)
+        dan = da / (np.hypot(*da) + 1e-9)
+        dbn = db / (np.hypot(*db) + 1e-9)
+        # a's outward end points toward b (bn); b's outward end points toward a (-bn)
+        ang_a = np.degrees(np.arccos(np.clip(np.dot(dan,  bn), -1, 1)))
+        ang_b = np.degrees(np.arccos(np.clip(np.dot(dbn, -bn), -1, 1)))
+        if ang_a <= max_angle_deg and ang_b <= max_angle_deg:
+            candidates.append((gap, (ia, ea), (ib, eb)))
+
+    # Greedy: accept shortest gaps first, each endpoint used at most once
+    candidates.sort(key=lambda x: x[0])
+    used = set()
+    partner = {}
+    for gap, ea_id, eb_id in candidates:
+        if ea_id in used or eb_id in used:
+            continue
+        partner[ea_id] = eb_id
+        partner[eb_id] = ea_id
+        used.add(ea_id)
+        used.add(eb_id)
+
+    # Walk chains of joined segments into single LineStrings
+    visited = set()
+    result = []
+    for start_i in range(n):
+        if start_i in visited:
+            continue
+        # Start at a free end if there is one, else break a cycle arbitrarily
+        start_port = None
+        for p in (0, 1):
+            if (start_i, p) not in partner:
+                start_port = p
+                break
+        if start_port is None:
+            start_port = 0
+
+        chain = []
+        cur_line, cur_in = start_i, start_port
+        while cur_line not in visited:
+            visited.add(cur_line)
+            cs = coords_list[cur_line]
+            seg = list(cs) if cur_in == 0 else list(cs[::-1])
+            chain.extend(seg)              # gap between segments = implicit bridge
+            cur_out = 1 - cur_in
+            nxt = partner.get((cur_line, cur_out))
+            if nxt is None or nxt[0] in visited:
+                break
+            cur_line, cur_in = nxt
+
+        if len(chain) >= 2:
+            result.append(LineString(chain))
+
+    return result
 
 
 def postprocess_to_vector(prob_raster, corridor_mask, geotransform):
