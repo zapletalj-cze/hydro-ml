@@ -82,6 +82,16 @@ PATCH_EXTENT_M  = PATCH_SIZE_PX * PATCH_RES_M    # 2560 m
 STRIDE_PX       = 128            # 50% overlap
 STRIDE_M        = STRIDE_PX * PATCH_RES_M        # 1280 m
 
+# Stitching of overlapping patch predictions into the probability raster:
+#   "feather" - weighted blend with a raised-cosine window (recommended):
+#               low-context patch edges contribute little, overlaps blend
+#               smoothly, no patch-boundary seams, no false-positive inflation.
+#   "max"     - take the maximum across overlapping patches: propagates the most
+#               confident detection, but also propagates the most confident noise.
+#   "average" - plain mean (legacy): dilutes confident centers with weak edges,
+#               which produces visible seams at patch boundaries.
+STITCH_METHOD   = "feather"
+
 TPI_RADII_PX    = [5, 10, 15]    # 50, 100, 150 m on 10 m grid
 RIVER_BUFFER_M  = 500
 MIN_UPAREA_KM2  = 10
@@ -390,6 +400,19 @@ def run_inference(model, centers, norm_stats):
 # STITCHING
 # ============================================================
 
+def _blend_window(size_px, floor=0.02):
+    """
+    2D raised-cosine (Hann) window with a small floor, used for feathered
+    stitching. Approximately 1 at the patch center and ~0 (floored) at the
+    edges, so unreliable low-context edge predictions contribute little and
+    overlapping patches blend without seams.
+    """
+    n = np.arange(size_px)
+    w1d = 0.5 * (1.0 - np.cos(2.0 * np.pi * n / (size_px - 1)))
+    w1d = np.clip(w1d, floor, None)
+    return np.outer(w1d, w1d).astype(np.float32)
+
+
 def stitch_predictions(predictions, corridor_geom):
     """
     Stitch patch predictions into a single probability raster covering the corridor bbox.
@@ -408,27 +431,42 @@ def stitch_predictions(predictions, corridor_geom):
     width_px  = int(np.ceil(width_m / PATCH_RES_M))
     height_px = int(np.ceil(height_m / PATCH_RES_M))
 
-    sum_pred = np.zeros((height_px, width_px), dtype=np.float32)
-    sum_wts  = np.zeros((height_px, width_px), dtype=np.float32)
-
-    for cx, cy, pred in predictions:
+    def _offsets(cx, cy):
         col_off = int(round((cx - PATCH_EXTENT_M / 2 - origin_x) / PATCH_RES_M))
         row_off = int(round((origin_y - cy - PATCH_EXTENT_M / 2) / PATCH_RES_M))
-
-        # Clip in case patch extends outside the allocated raster
         r0, r1 = max(0, row_off), min(height_px, row_off + PATCH_SIZE_PX)
         c0, c1 = max(0, col_off), min(width_px, col_off + PATCH_SIZE_PX)
         pr0 = r0 - row_off
         pr1 = pr0 + (r1 - r0)
         pc0 = c0 - col_off
         pc1 = pc0 + (c1 - c0)
+        return (r0, r1, c0, c1, pr0, pr1, pc0, pc1)
 
-        sum_pred[r0:r1, c0:c1] += pred[pr0:pr1, pc0:pc1]
-        sum_wts [r0:r1, c0:c1] += 1.0
+    if STITCH_METHOD == "max":
+        # Propagate the most confident prediction across overlaps
+        prob = np.zeros((height_px, width_px), dtype=np.float32)
+        for cx, cy, pred in predictions:
+            r0, r1, c0, c1, pr0, pr1, pc0, pc1 = _offsets(cx, cy)
+            prob[r0:r1, c0:c1] = np.maximum(prob[r0:r1, c0:c1],
+                                            pred[pr0:pr1, pc0:pc1])
+    else:
+        # Weighted blend; window is uniform for "average", raised-cosine for "feather"
+        if STITCH_METHOD == "feather":
+            window = _blend_window(PATCH_SIZE_PX)
+        else:
+            window = np.ones((PATCH_SIZE_PX, PATCH_SIZE_PX), dtype=np.float32)
 
-    prob = np.zeros_like(sum_pred)
-    mask = sum_wts > 0
-    prob[mask] = sum_pred[mask] / sum_wts[mask]
+        sum_pred = np.zeros((height_px, width_px), dtype=np.float32)
+        sum_wts  = np.zeros((height_px, width_px), dtype=np.float32)
+        for cx, cy, pred in predictions:
+            r0, r1, c0, c1, pr0, pr1, pc0, pc1 = _offsets(cx, cy)
+            w = window[pr0:pr1, pc0:pc1]
+            sum_pred[r0:r1, c0:c1] += pred[pr0:pr1, pc0:pc1] * w
+            sum_wts [r0:r1, c0:c1] += w
+
+        prob = np.zeros_like(sum_pred)
+        mask = sum_wts > 0
+        prob[mask] = sum_pred[mask] / sum_wts[mask]
 
     geotransform = (origin_x, PATCH_RES_M, 0.0, origin_y, 0.0, -PATCH_RES_M)
     return prob, geotransform
