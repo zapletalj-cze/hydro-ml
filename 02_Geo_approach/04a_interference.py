@@ -20,6 +20,7 @@ Version:  0.3
 """
 
 import warnings
+
 warnings.filterwarnings("ignore")
 
 import json
@@ -37,6 +38,7 @@ from shapely.geometry import LineString, MultiLineString, Polygon, box
 from shapely.ops import unary_union, linemerge
 
 from osgeo import gdal, gdalconst
+
 gdal.UseExceptions()
 
 from skimage.morphology import skeletonize, remove_small_objects, binary_closing, disk
@@ -44,71 +46,87 @@ from skimage.measure import label as label_components
 
 from tqdm import tqdm
 
-
 # ============================================================
 # CONFIG
 # ============================================================
 
 # --- User-provided paths ---
-AOI_PATH         = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\AOI_Poland.gpkg")
-DSM_PATH         = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\COP_DSM\COP_DSM_Poland_2180_c.tif")
-CANOPY_PATH      = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\data\CanopyHeight\Poland\reprojected\ETH_GlobalCanopyHeight_10m_2020_Poland_Map_2180.tif")
-CANOPY_SD_PATH   = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\data\CanopyHeight\Poland\reprojected\ETH_GlobalCanopyHeight_10m_2020_Poland_Map_SD_2180.tif")
-MERIT_PATH       = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\data\riv_pfaf_2x_MERIT_Hydro_v07_Basin_flip_2180.gpkg")
+AOI_PATH = Path(
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\AOI_Poland.gpkg"
+)
+DSM_PATH = Path(
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\COP_DSM\COP_DSM_Poland_2180_c.tif"
+)
+CANOPY_PATH = Path(
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\data\CanopyHeight\Poland\reprojected\ETH_GlobalCanopyHeight_10m_2020_Poland_Map_2180.tif"
+)
+CANOPY_SD_PATH = Path(
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\data\CanopyHeight\Poland\reprojected\ETH_GlobalCanopyHeight_10m_2020_Poland_Map_SD_2180.tif"
+)
+MERIT_PATH = Path(
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\data\riv_pfaf_2x_MERIT_Hydro_v07_Basin_flip_2180.gpkg"
+)
 MERIT_UPAREA_COL = "uparea"
 
-CHECKPOINT_PATH  = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v03_segformer_v3_dsm_tpi_canopyheight\best_model.pt")
-NORM_STATS_PATH  = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v03_segformer_v3_dsm_tpi_canopyheight\norm_stats.json")
+CHECKPOINT_PATH = Path(
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v03_segformer_v3_dsm_tpi_canopyheight\best_model.pt"
+)
+NORM_STATS_PATH = Path(
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v03_segformer_v3_dsm_tpi_canopyheight\norm_stats.json"
+)
 
-OUTPUT_GPKG      = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v03_segformer_v3_dsm_tpi_canopyheight\interference_outputs\detected_levees.gpkg")
+OUTPUT_GPKG = Path(
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v03_segformer_v3_dsm_tpi_canopyheight\interference_outputs\detected_levees.gpkg"
+)
 
 # Probability raster output (intermediate result, used by ensemble script).
 # Derived from OUTPUT_GPKG path with _prob.tif suffix.
-OUTPUT_PROB_TIF  = OUTPUT_GPKG.with_name(OUTPUT_GPKG.stem + "_prob.tif")
+OUTPUT_PROB_TIF = OUTPUT_GPKG.with_name(OUTPUT_GPKG.stem + "_prob.tif")
 
 # --- Geographic & raster constants (must match training) ---
-CRS_TARGET      = 2180          # EPSG:2180 (PL-1992)
-PATCH_SIZE_PX   = 256
-PATCH_RES_M     = 10
-PATCH_EXTENT_M  = PATCH_SIZE_PX * PATCH_RES_M    # 2560 m
-STRIDE_PX       = 128            # 50% overlap
-STRIDE_M        = STRIDE_PX * PATCH_RES_M        # 1280 m
+CRS_TARGET = 2180  # EPSG:2180 (PL-1992)
+PATCH_SIZE_PX = 256
+PATCH_RES_M = 10
+PATCH_EXTENT_M = PATCH_SIZE_PX * PATCH_RES_M  # 2560 m
+STRIDE_PX = 128  # 50% overlap
+STRIDE_M = STRIDE_PX * PATCH_RES_M  # 1280 m
 
-TPI_RADII_PX    = [5, 10, 15]    # 50, 100, 150 m on 10 m grid
-RIVER_BUFFER_M  = 500
-MIN_UPAREA_KM2  = 10
+TPI_RADII_PX = [5, 10, 15]  # 50, 100, 150 m on 10 m grid
+RIVER_BUFFER_M = 500
+MIN_UPAREA_KM2 = 10
 
 # --- Model / inference constants ---
 SEGFORMER_BACKBONE = "mit_b2"
 N_INPUT_CHANNELS = 6
-INFERENCE_BATCH  = 16
-DEVICE           = "cuda" if torch.cuda.is_available() else "cpu"
+INFERENCE_BATCH = 16
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # --- Postprocessing constants ---
-PROB_THRESHOLD       = 0.5
-MIN_COMPONENT_PX     = 50
-CLOSING_RADIUS_PX    = 3     # bridges small along-line gaps before skeletonization
-MIN_LINE_LENGTH_M    = 50
-SPUR_PRUNE_PX        = 5     # prune skeleton spurs shorter than this (removes false junctions)
+PROB_THRESHOLD = 0.5
+MIN_COMPONENT_PX = 50
+CLOSING_RADIUS_PX = 3  # bridges small along-line gaps before skeletonization
+MIN_LINE_LENGTH_M = 50
+SPUR_PRUNE_PX = 5  # prune skeleton spurs shorter than this (removes false junctions)
 
 # Corridor masking in postprocessing. Patches already run only where their CENTER
 # is in the corridor, so each patch extends ~1.28 km beyond it. Re-masking the
 # stitched raster by the (narrow) corridor clips valid levee detections that sit
 # on the floodplain edge, further than RIVER_BUFFER_M from the channel. Set False
 # to keep the full detected geometry, or widen POSTPROCESS_BUFFER_M.
-APPLY_CORRIDOR_MASK     = False
-POSTPROCESS_BUFFER_M    = 500    # only used if APPLY_CORRIDOR_MASK is True
+APPLY_CORRIDOR_MASK = False
+POSTPROCESS_BUFFER_M = 500  # only used if APPLY_CORRIDOR_MASK is True
 
 # Vector-space gap bridging: reconnect line endpoints that are close and roughly
 # collinear (bridges breaks where the band briefly drops below threshold).
-BRIDGE_GAPS          = True
-BRIDGE_MAX_GAP_M     = 100   # max endpoint distance to bridge
-BRIDGE_MAX_ANGLE_DEG = 45    # max deviation from collinear
+BRIDGE_GAPS = True
+BRIDGE_MAX_GAP_M = 100  # max endpoint distance to bridge
+BRIDGE_MAX_ANGLE_DEG = 45  # max deviation from collinear
 
 
 # ============================================================
 # MODEL LOADING
 # ============================================================
+
 
 def adapt_first_conv_segformer(model, n_input_channels):
     """Replicate pretrained 3-channel patch_embed1.proj weights for N channels."""
@@ -122,8 +140,11 @@ def adapt_first_conv_segformer(model, n_input_channels):
     new_weight = new_weight / (n_input_channels / 3)
 
     new_conv = nn.Conv2d(
-        n_input_channels, out_ch,
-        kernel_size=(kh, kw), stride=first_conv.stride, padding=first_conv.padding,
+        n_input_channels,
+        out_ch,
+        kernel_size=(kh, kw),
+        stride=first_conv.stride,
+        padding=first_conv.padding,
         bias=first_conv.bias is not None,
     )
     new_conv.weight.data = new_weight
@@ -138,7 +159,7 @@ def build_and_load_model():
     """Build SegFormer with 6-channel input, load checkpoint."""
     model = smp.Segformer(
         encoder_name=SEGFORMER_BACKBONE,
-        encoder_weights=None,        # weights come from checkpoint
+        encoder_weights=None,  # weights come from checkpoint
         in_channels=3,
         classes=1,
         activation=None,
@@ -156,6 +177,7 @@ def build_and_load_model():
 # ============================================================
 # AOI + RIVER CORRIDOR
 # ============================================================
+
 
 def load_aoi_polygon():
     """Load AOI polygon, reproject to target CRS, return single MultiPolygon."""
@@ -189,6 +211,7 @@ def build_river_corridor(aoi_geom):
 # PATCH GRID GENERATION
 # ============================================================
 
+
 def generate_patch_centers(corridor_geom):
     """
     Generate sliding-window patch center coordinates covering the corridor.
@@ -206,8 +229,12 @@ def generate_patch_centers(corridor_geom):
         x = x_start
         while x <= maxx + STRIDE_M:
             # Keep patch if its bounding box intersects the corridor
-            patch_box = box(x - PATCH_EXTENT_M / 2, y - PATCH_EXTENT_M / 2,
-                            x + PATCH_EXTENT_M / 2, y + PATCH_EXTENT_M / 2)
+            patch_box = box(
+                x - PATCH_EXTENT_M / 2,
+                y - PATCH_EXTENT_M / 2,
+                x + PATCH_EXTENT_M / 2,
+                y + PATCH_EXTENT_M / 2,
+            )
             if patch_box.intersects(corridor_geom):
                 centers.append((x, y))
             x += STRIDE_M
@@ -219,6 +246,7 @@ def generate_patch_centers(corridor_geom):
 # ============================================================
 # RASTER WINDOW READING
 # ============================================================
+
 
 def read_window(ds, bbox, target_pixels, resample=gdalconst.GRA_Bilinear):
     """
@@ -243,7 +271,12 @@ def read_window(ds, bbox, target_pixels, resample=gdalconst.GRA_Bilinear):
     raster_ysize = ds.RasterYSize
 
     # If window is fully outside, return zeros
-    if col_off >= raster_xsize or row_off >= raster_ysize or col_off + col_size <= 0 or row_off + row_size <= 0:
+    if (
+        col_off >= raster_xsize
+        or row_off >= raster_ysize
+        or col_off + col_size <= 0
+        or row_off + row_size <= 0
+    ):
         return np.zeros((target_pixels, target_pixels), dtype=np.float32)
 
     # Handle partial out-of-bounds by clipping and zero-padding
@@ -256,12 +289,20 @@ def read_window(ds, bbox, target_pixels, resample=gdalconst.GRA_Bilinear):
         return np.zeros((target_pixels, target_pixels), dtype=np.float32)
 
     # If we had to clip, scale target pixels proportionally; otherwise read direct
-    if (read_col == col_off and read_row == row_off and
-            read_col_size == col_size and read_row_size == row_size):
+    if (
+        read_col == col_off
+        and read_row == row_off
+        and read_col_size == col_size
+        and read_row_size == row_size
+    ):
         band = ds.GetRasterBand(1)
         arr = band.ReadAsArray(
-            read_col, read_row, read_col_size, read_row_size,
-            buf_xsize=target_pixels, buf_ysize=target_pixels,
+            read_col,
+            read_row,
+            read_col_size,
+            read_row_size,
+            buf_xsize=target_pixels,
+            buf_ysize=target_pixels,
             resample_alg=resample,
         ).astype(np.float32)
         return arr
@@ -274,21 +315,29 @@ def read_window(ds, bbox, target_pixels, resample=gdalconst.GRA_Bilinear):
 
     band = ds.GetRasterBand(1)
     sub = band.ReadAsArray(
-        read_col, read_row, read_col_size, read_row_size,
-        buf_xsize=sub_target_w, buf_ysize=sub_target_h,
+        read_col,
+        read_row,
+        read_col_size,
+        read_row_size,
+        buf_xsize=sub_target_w,
+        buf_ysize=sub_target_h,
         resample_alg=resample,
     ).astype(np.float32)
 
     out = np.zeros((target_pixels, target_pixels), dtype=np.float32)
     out_col_off = int(round(target_pixels * (read_col - col_off) / col_size))
     out_row_off = int(round(target_pixels * (read_row - row_off) / row_size))
-    out[out_row_off:out_row_off + sub_target_h, out_col_off:out_col_off + sub_target_w] = sub
+    out[
+        out_row_off : out_row_off + sub_target_h,
+        out_col_off : out_col_off + sub_target_w,
+    ] = sub
     return out
 
 
 # ============================================================
 # PATCH EXTRACTION + NORMALIZATION
 # ============================================================
+
 
 def compute_tpi(z, radius_px):
     """TPI = z minus mean of NxN neighborhood. Matches training pipeline."""
@@ -308,8 +357,8 @@ def extract_patch(center_x, center_y, dsm_ds, canopy_ds, canopy_sd_ds):
         center_y + PATCH_EXTENT_M / 2,
     )
 
-    dsm       = read_window(dsm_ds,       bbox, PATCH_SIZE_PX, gdalconst.GRA_Bilinear)
-    canopy    = read_window(canopy_ds,    bbox, PATCH_SIZE_PX, gdalconst.GRA_Bilinear)
+    dsm = read_window(dsm_ds, bbox, PATCH_SIZE_PX, gdalconst.GRA_Bilinear)
+    canopy = read_window(canopy_ds, bbox, PATCH_SIZE_PX, gdalconst.GRA_Bilinear)
     canopy_sd = read_window(canopy_sd_ds, bbox, PATCH_SIZE_PX, gdalconst.GRA_Bilinear)
 
     tpi_channels = [compute_tpi(dsm, r) for r in TPI_RADII_PX]
@@ -330,10 +379,16 @@ def normalize_patch(patch, norm_stats):
     out[0] = out[0] - np.median(out[0])
 
     # Channels 1..5: per-channel z-score
-    channel_names = ["tpi_r5", "tpi_r10", "tpi_r15", "canopy_height", "canopy_height_sd"]
+    channel_names = [
+        "tpi_r5",
+        "tpi_r10",
+        "tpi_r15",
+        "canopy_height",
+        "canopy_height_sd",
+    ]
     for i, name in enumerate(channel_names, start=1):
         mean = norm_stats[name]["mean"]
-        std  = norm_stats[name]["std"]
+        std = norm_stats[name]["std"]
         out[i] = (out[i] - mean) / (std + 1e-8)
 
     return out
@@ -343,12 +398,13 @@ def normalize_patch(patch, norm_stats):
 # BATCHED INFERENCE
 # ============================================================
 
+
 def run_inference(model, centers, norm_stats):
     """
     Run batched inference. For each center, return (center, prediction_256x256).
     """
-    dsm_ds       = gdal.Open(str(DSM_PATH))
-    canopy_ds    = gdal.Open(str(CANOPY_PATH))
+    dsm_ds = gdal.Open(str(DSM_PATH))
+    canopy_ds = gdal.Open(str(CANOPY_PATH))
     canopy_sd_ds = gdal.Open(str(CANOPY_SD_PATH))
 
     if dsm_ds is None or canopy_ds is None or canopy_sd_ds is None:
@@ -358,9 +414,12 @@ def run_inference(model, centers, norm_stats):
     n_centers = len(centers)
 
     with torch.no_grad():
-        for batch_start in tqdm(range(0, n_centers, INFERENCE_BATCH),
-                                desc="Inference", total=(n_centers + INFERENCE_BATCH - 1) // INFERENCE_BATCH):
-            batch_centers = centers[batch_start:batch_start + INFERENCE_BATCH]
+        for batch_start in tqdm(
+            range(0, n_centers, INFERENCE_BATCH),
+            desc="Inference",
+            total=(n_centers + INFERENCE_BATCH - 1) // INFERENCE_BATCH,
+        ):
+            batch_centers = centers[batch_start : batch_start + INFERENCE_BATCH]
 
             patches = []
             for cx, cy in batch_centers:
@@ -386,6 +445,7 @@ def run_inference(model, centers, norm_stats):
 # STITCHING
 # ============================================================
 
+
 def stitch_predictions(predictions, corridor_geom):
     """
     Stitch patch predictions into a single probability raster covering the corridor bbox.
@@ -398,14 +458,14 @@ def stitch_predictions(predictions, corridor_geom):
     origin_x = (minx // STRIDE_M) * STRIDE_M - PATCH_EXTENT_M / 2
     origin_y = (maxy // STRIDE_M + 1) * STRIDE_M + PATCH_EXTENT_M / 2
 
-    width_m  = (maxx - origin_x) + PATCH_EXTENT_M
+    width_m = (maxx - origin_x) + PATCH_EXTENT_M
     height_m = (origin_y - miny) + PATCH_EXTENT_M
 
-    width_px  = int(np.ceil(width_m / PATCH_RES_M))
+    width_px = int(np.ceil(width_m / PATCH_RES_M))
     height_px = int(np.ceil(height_m / PATCH_RES_M))
 
     sum_pred = np.zeros((height_px, width_px), dtype=np.float32)
-    sum_wts  = np.zeros((height_px, width_px), dtype=np.float32)
+    sum_wts = np.zeros((height_px, width_px), dtype=np.float32)
 
     for cx, cy, pred in predictions:
         col_off = int(round((cx - PATCH_EXTENT_M / 2 - origin_x) / PATCH_RES_M))
@@ -420,7 +480,7 @@ def stitch_predictions(predictions, corridor_geom):
         pc1 = pc0 + (c1 - c0)
 
         sum_pred[r0:r1, c0:c1] += pred[pr0:pr1, pc0:pc1]
-        sum_wts [r0:r1, c0:c1] += 1.0
+        sum_wts[r0:r1, c0:c1] += 1.0
 
     prob = np.zeros_like(sum_pred)
     mask = sum_wts > 0
@@ -460,7 +520,11 @@ def save_prob_raster_geotiff(prob, geotransform, output_path):
     height_px, width_px = prob.shape
     drv = gdal.GetDriverByName("GTiff")
     ds = drv.Create(
-        str(output_path), width_px, height_px, 1, gdal.GDT_Float32,
+        str(output_path),
+        width_px,
+        height_px,
+        1,
+        gdal.GDT_Float32,
         options=["COMPRESS=LZW", "PREDICTOR=2", "TILED=YES"],
     )
     ds.SetGeoTransform(geotransform)
@@ -476,6 +540,7 @@ def save_prob_raster_geotiff(prob, geotransform, output_path):
 # ============================================================
 # POSTPROCESSING: skeleton -> vector
 # ============================================================
+
 
 def _neighbors_in_set(r, c, pixel_set):
     """Return 8-connectivity neighbors of (r, c) that are in pixel_set."""
@@ -515,17 +580,20 @@ def prune_spurs(skeleton_mask, min_spur_px):
             cur, prev = ep, None
             hit_junction = False
             while True:
-                nbrs = [n for n in _neighbors_in_set(*cur, skel)
-                        if n != prev and n not in to_remove]
+                nbrs = [
+                    n
+                    for n in _neighbors_in_set(*cur, skel)
+                    if n != prev and n not in to_remove
+                ]
                 if len(nbrs) == 0:
-                    break               # dead end / isolated
+                    break  # dead end / isolated
                 if len(nbrs) >= 2:
                     hit_junction = True  # reached a junction
                     break
                 prev, cur = cur, nbrs[0]
                 branch.append(cur)
                 if len(branch) > min_spur_px:
-                    break               # branch too long to be a spur
+                    break  # branch too long to be a spur
             if hit_junction and len(branch) <= min_spur_px:
                 to_remove.update(branch)
         if to_remove:
@@ -613,7 +681,7 @@ def skeleton_to_linestrings(skeleton_mask, geotransform):
                 path.append(cur)
             walked.add((node, nbr))
             if len(path) >= 2:
-                walked.add((path[-1], path[-2]))   # mark reverse direction
+                walked.add((path[-1], path[-2]))  # mark reverse direction
                 lines.append(LineString([to_world(*p) for p in path]))
 
     # Step 4: safety-net merge of any collinear edges meeting at degree-2 points
@@ -652,7 +720,7 @@ def bridge_line_gaps(lines, max_gap_m, max_angle_deg):
     ep_coords = np.empty((2 * n, 2), dtype=float)
     ep_ids = []
     for i, cs in enumerate(coords_list):
-        ep_coords[2 * i]     = cs[0]
+        ep_coords[2 * i] = cs[0]
         ep_coords[2 * i + 1] = cs[-1]
         ep_ids.append((i, 0))
         ep_ids.append((i, 1))
@@ -674,7 +742,7 @@ def bridge_line_gaps(lines, max_gap_m, max_angle_deg):
         ia, ea = ep_ids[a]
         ib, eb = ep_ids[b]
         if ia == ib:
-            continue                       # ignore a line's own two ends
+            continue  # ignore a line's own two ends
         pa, pb = ep_coords[a], ep_coords[b]
         gap = float(np.hypot(*(pa - pb)))
         if gap == 0:
@@ -684,7 +752,7 @@ def bridge_line_gaps(lines, max_gap_m, max_angle_deg):
         dan = da / (np.hypot(*da) + 1e-9)
         dbn = db / (np.hypot(*db) + 1e-9)
         # a's outward end points toward b (bn); b's outward end points toward a (-bn)
-        ang_a = np.degrees(np.arccos(np.clip(np.dot(dan,  bn), -1, 1)))
+        ang_a = np.degrees(np.arccos(np.clip(np.dot(dan, bn), -1, 1)))
         ang_b = np.degrees(np.arccos(np.clip(np.dot(dbn, -bn), -1, 1)))
         if ang_a <= max_angle_deg and ang_b <= max_angle_deg:
             candidates.append((gap, (ia, ea), (ib, eb)))
@@ -722,7 +790,7 @@ def bridge_line_gaps(lines, max_gap_m, max_angle_deg):
             visited.add(cur_line)
             cs = coords_list[cur_line]
             seg = list(cs) if cur_in == 0 else list(cs[::-1])
-            chain.extend(seg)              # gap between segments = implicit bridge
+            chain.extend(seg)  # gap between segments = implicit bridge
             cur_out = 1 - cur_in
             nxt = partner.get((cur_line, cur_out))
             if nxt is None or nxt[0] in visited:
@@ -748,8 +816,10 @@ def postprocess_to_vector(prob_raster, corridor_mask, geotransform):
 
     if APPLY_CORRIDOR_MASK:
         binary = above & corridor_mask
-        print(f"    after corridor mask:  {binary.sum():,} "
-              f"({100*binary.sum()/max(above.sum(),1):.0f}% kept)")
+        print(
+            f"    after corridor mask:  {binary.sum():,} "
+            f"({100*binary.sum()/max(above.sum(),1):.0f}% kept)"
+        )
     else:
         binary = above
 
@@ -777,18 +847,23 @@ def postprocess_to_vector(prob_raster, corridor_mask, geotransform):
 
     n_before = len(lines)
     lines = [ln for ln in lines if ln.length >= MIN_LINE_LENGTH_M]
-    print(f"    after length filter:  {len(lines)} (removed {n_before - len(lines)} "
-          f"shorter than {MIN_LINE_LENGTH_M} m)")
+    print(
+        f"    after length filter:  {len(lines)} (removed {n_before - len(lines)} "
+        f"shorter than {MIN_LINE_LENGTH_M} m)"
+    )
 
     gdf = gpd.GeoDataFrame(
         {"length_m": [ln.length for ln in lines]},
-        geometry=lines, crs=f"EPSG:{CRS_TARGET}",
+        geometry=lines,
+        crs=f"EPSG:{CRS_TARGET}",
     )
     return gdf
+
 
 # ============================================================
 # MAIN
 # ============================================================
+
 
 def main():
     print(f"Device: {DEVICE}")
@@ -813,7 +888,9 @@ def main():
     aoi_geom = load_aoi_polygon()
     corridor_geom, merit_in_aoi = build_river_corridor(aoi_geom)
     print(f"  AOI area:       {aoi_geom.area / 1e6:.1f} km²")
-    print(f"  Corridor area:  {corridor_geom.area / 1e6:.1f} km² ({corridor_geom.area / aoi_geom.area * 100:.1f}%)")
+    print(
+        f"  Corridor area:  {corridor_geom.area / 1e6:.1f} km² ({corridor_geom.area / aoi_geom.area * 100:.1f}%)"
+    )
     print(f"  MERIT reaches:  {len(merit_in_aoi)}")
 
     # 4. Generate patch grid
@@ -830,7 +907,9 @@ def main():
     # 6. Stitch probability raster
     print("Stitching predictions...")
     prob_raster, geotransform = stitch_predictions(predictions, corridor_geom)
-    print(f"  Probability raster: {prob_raster.shape} ({prob_raster.nbytes / 1e6:.1f} MB)")
+    print(
+        f"  Probability raster: {prob_raster.shape} ({prob_raster.nbytes / 1e6:.1f} MB)"
+    )
 
     # 6b. Save prob raster as GeoTIFF (intermediate result for ensembling)
     print(f"Saving probability raster to {OUTPUT_PROB_TIF}...")
@@ -839,7 +918,9 @@ def main():
 
     # 7. Rasterize corridor mask
     print("Rasterizing corridor mask...")
-    corridor_mask = rasterize_corridor_mask(corridor_geom, geotransform, prob_raster.shape)
+    corridor_mask = rasterize_corridor_mask(
+        corridor_geom, geotransform, prob_raster.shape
+    )
 
     # 8. Postprocess to vector
     print("Postprocessing (threshold -> skeleton -> vectorize)...")

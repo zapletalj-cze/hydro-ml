@@ -30,6 +30,7 @@ Version:  0.2 (derives data from CSVs)
 """
 
 import warnings
+
 warnings.filterwarnings("ignore")
 
 from pathlib import Path
@@ -37,26 +38,35 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-
 
 # ============================================================
 # CONFIG — edit these
 # ============================================================
 
 VARIANTS = {
-    "v1 (DSM)":          Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v03_segformer_v1_dsm_only"),
-    "v2 (DSM+TPI)":      Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v03_segformer_v2_dsm_tpi"),
-    "v3 (DSM+TPI+aux)":  Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v03_segformer_v3_dsm_tpi_canopyheight"),
+    "v1 (DSM)": Path(
+        r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v03_segformer_v1_dsm_only"
+    ),
+    "v2 (DSM+TPI)": Path(
+        r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v03_segformer_v2_dsm_tpi"
+    ),
+    "v3 (DSM+TPI+aux)": Path(
+        r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v03_segformer_v3_dsm_tpi_canopyheight"
+    ),
 }
 
-OUTPUT_DIR = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v03_comparison")
+OUTPUT_DIR = Path(
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v03_comparison"
+)
 
 
 # ============================================================
 # LOAD RUN ARTIFACTS
 # ============================================================
+
 
 def load_run(variant_name, run_dir):
     """
@@ -64,21 +74,22 @@ def load_run(variant_name, run_dir):
     Reconstructs best-epoch info from training_history.csv (val_score column).
     """
     history_path = run_dir / "training_history.csv"
-    test_path    = run_dir / "test_results_per_patch.csv"
-    val_path     = run_dir / "val_results_per_patch.csv"
+    test_path = run_dir / "test_results_per_patch.csv"
+    val_path = run_dir / "val_results_per_patch.csv"
 
-    for p, desc in [(history_path, "training_history.csv"),
-                    (test_path,    "test_results_per_patch.csv"),
-                    (val_path,     "val_results_per_patch.csv")]:
+    for p, desc in [
+        (history_path, "training_history.csv"),
+        (test_path, "test_results_per_patch.csv"),
+        (val_path, "val_results_per_patch.csv"),
+    ]:
         if not p.exists():
             raise FileNotFoundError(
-                f"[{variant_name}] {desc} not found at {p}. "
-                "Has this run finished?"
+                f"[{variant_name}] {desc} not found at {p}. " "Has this run finished?"
             )
 
     history = pd.read_csv(history_path)
-    test    = pd.read_csv(test_path)
-    val     = pd.read_csv(val_path)
+    test = pd.read_csv(test_path)
+    val = pd.read_csv(val_path)
 
     # Find best epoch from the history (criterion used during training: val_score = (val_dice+val_cldice)/2)
     if "val_score" in history.columns:
@@ -95,23 +106,32 @@ def load_run(variant_name, run_dir):
             best_val_score = float("nan")
 
     return {
-        "name":            variant_name,
-        "run_dir":         run_dir,
-        "history":         history,
-        "test_results":    test,
-        "val_results":     val,
-        "n_epochs_run":    len(history),
-        "best_epoch":      int(history.loc[best_idx, "epoch"]),
-        "best_val_score":  best_val_score,
-        "best_val_dice":   float(history.loc[best_idx, "val_dice"]),
-        "best_val_cldice": float(history.loc[best_idx, "val_cldice"]) if "val_cldice" in history.columns else float("nan"),
-        "best_val_loss":   float(history.loc[best_idx, "val_loss"])   if "val_loss"   in history.columns else float("nan"),
+        "name": variant_name,
+        "run_dir": run_dir,
+        "history": history,
+        "test_results": test,
+        "val_results": val,
+        "n_epochs_run": len(history),
+        "best_epoch": int(history.loc[best_idx, "epoch"]),
+        "best_val_score": best_val_score,
+        "best_val_dice": float(history.loc[best_idx, "val_dice"]),
+        "best_val_cldice": (
+            float(history.loc[best_idx, "val_cldice"])
+            if "val_cldice" in history.columns
+            else float("nan")
+        ),
+        "best_val_loss": (
+            float(history.loc[best_idx, "val_loss"])
+            if "val_loss" in history.columns
+            else float("nan")
+        ),
     }
 
 
 # ============================================================
 # AGGREGATION HELPERS
 # ============================================================
+
 
 def aggregate_results(df):
     """
@@ -125,33 +145,35 @@ def aggregate_results(df):
     total_tn = int(df["tn"].sum())
 
     micro_precision = total_tp / (total_tp + total_fp + eps)
-    micro_recall    = total_tp / (total_tp + total_fn + eps)
-    micro_f1        = 2 * micro_precision * micro_recall / (micro_precision + micro_recall + eps)
-    micro_iou       = total_tp / (total_tp + total_fp + total_fn + eps)
-    micro_dice      = 2 * total_tp / (2 * total_tp + total_fp + total_fn + eps)
+    micro_recall = total_tp / (total_tp + total_fn + eps)
+    micro_f1 = (
+        2 * micro_precision * micro_recall / (micro_precision + micro_recall + eps)
+    )
+    micro_iou = total_tp / (total_tp + total_fp + total_fn + eps)
+    micro_dice = 2 * total_tp / (2 * total_tp + total_fp + total_fn + eps)
 
     return {
         "n_patches": len(df),
         "mean": {
-            "dice":      float(df["dice"].mean()),
-            "iou":       float(df["iou"].mean()),
-            "cldice":    float(df["cldice"].mean()),
-            "f1":        float(df["f1"].mean()),
+            "dice": float(df["dice"].mean()),
+            "iou": float(df["iou"].mean()),
+            "cldice": float(df["cldice"].mean()),
+            "f1": float(df["f1"].mean()),
             "precision": float(df["precision"].mean()),
-            "recall":    float(df["recall"].mean()),
+            "recall": float(df["recall"].mean()),
         },
         "std": {
-            "dice":      float(df["dice"].std()),
-            "iou":       float(df["iou"].std()),
-            "cldice":    float(df["cldice"].std()),
-            "f1":        float(df["f1"].std()),
+            "dice": float(df["dice"].std()),
+            "iou": float(df["iou"].std()),
+            "cldice": float(df["cldice"].std()),
+            "f1": float(df["f1"].std()),
         },
         "micro": {
-            "dice":      float(micro_dice),
-            "iou":       float(micro_iou),
-            "f1":        float(micro_f1),
+            "dice": float(micro_dice),
+            "iou": float(micro_iou),
+            "f1": float(micro_f1),
             "precision": float(micro_precision),
-            "recall":    float(micro_recall),
+            "recall": float(micro_recall),
         },
         "counts": {"tp": total_tp, "fp": total_fp, "fn": total_fn, "tn": total_tn},
     }
@@ -161,41 +183,46 @@ def aggregate_results(df):
 # COMPARISON TABLES
 # ============================================================
 
+
 def build_overall_table(runs):
     """One row per variant, columns = key test metrics."""
     rows = []
     for name, run in runs.items():
         agg = aggregate_results(run["test_results"])
-        rows.append({
-            "variant":              name,
-            "run_dir":              str(run["run_dir"]),
-            "n_epochs_run":         run["n_epochs_run"],
-            "best_epoch":           run["best_epoch"],
-            "best_val_score":       run["best_val_score"],
-            "best_val_dice":        run["best_val_dice"],
-            "best_val_cldice":      run["best_val_cldice"],
-            "best_val_loss":        run["best_val_loss"],
-            # Test set, mean per patch
-            "test_mean_dice":       agg["mean"]["dice"],
-            "test_mean_iou":        agg["mean"]["iou"],
-            "test_mean_cldice":     agg["mean"]["cldice"],
-            "test_mean_f1":         agg["mean"]["f1"],
-            "test_mean_precision":  agg["mean"]["precision"],
-            "test_mean_recall":     agg["mean"]["recall"],
-            # Per-patch std (selected)
-            "test_std_dice":        agg["std"]["dice"],
-            "test_std_cldice":      agg["std"]["cldice"],
-            # Test set, micro-averaged (from summed counts)
-            "test_micro_dice":      agg["micro"]["dice"],
-            "test_micro_iou":       agg["micro"]["iou"],
-            "test_micro_f1":        agg["micro"]["f1"],
-            "test_micro_precision": agg["micro"]["precision"],
-            "test_micro_recall":    agg["micro"]["recall"],
-            # Confusion matrix totals
-            "tp": agg["counts"]["tp"], "fp": agg["counts"]["fp"],
-            "fn": agg["counts"]["fn"], "tn": agg["counts"]["tn"],
-            "n_patches": agg["n_patches"],
-        })
+        rows.append(
+            {
+                "variant": name,
+                "run_dir": str(run["run_dir"]),
+                "n_epochs_run": run["n_epochs_run"],
+                "best_epoch": run["best_epoch"],
+                "best_val_score": run["best_val_score"],
+                "best_val_dice": run["best_val_dice"],
+                "best_val_cldice": run["best_val_cldice"],
+                "best_val_loss": run["best_val_loss"],
+                # Test set, mean per patch
+                "test_mean_dice": agg["mean"]["dice"],
+                "test_mean_iou": agg["mean"]["iou"],
+                "test_mean_cldice": agg["mean"]["cldice"],
+                "test_mean_f1": agg["mean"]["f1"],
+                "test_mean_precision": agg["mean"]["precision"],
+                "test_mean_recall": agg["mean"]["recall"],
+                # Per-patch std (selected)
+                "test_std_dice": agg["std"]["dice"],
+                "test_std_cldice": agg["std"]["cldice"],
+                # Test set, micro-averaged (from summed counts)
+                "test_micro_dice": agg["micro"]["dice"],
+                "test_micro_iou": agg["micro"]["iou"],
+                "test_micro_f1": agg["micro"]["f1"],
+                "test_micro_precision": agg["micro"]["precision"],
+                "test_micro_recall": agg["micro"]["recall"],
+                # Confusion matrix totals
+                "tp": agg["counts"]["tp"],
+                "fp": agg["counts"]["fp"],
+                "fn": agg["counts"]["fn"],
+                "tn": agg["counts"]["tn"],
+                "n_patches": agg["n_patches"],
+            }
+        )
     return pd.DataFrame(rows)
 
 
@@ -211,28 +238,31 @@ def build_breakdown_table(runs, group_cols):
             if not isinstance(keys, tuple):
                 keys = (keys,)
             agg = aggregate_results(sub)
-            rows.append({
-                "variant":         variant_name,
-                "group":           " | ".join(str(k) for k in keys),
-                "n_patches":       agg["n_patches"],
-                "mean_dice":       agg["mean"]["dice"],
-                "mean_iou":        agg["mean"]["iou"],
-                "mean_cldice":     agg["mean"]["cldice"],
-                "mean_f1":         agg["mean"]["f1"],
-                "mean_precision":  agg["mean"]["precision"],
-                "mean_recall":     agg["mean"]["recall"],
-                "micro_dice":      agg["micro"]["dice"],
-                "micro_iou":       agg["micro"]["iou"],
-                "micro_f1":        agg["micro"]["f1"],
-                "micro_precision": agg["micro"]["precision"],
-                "micro_recall":    agg["micro"]["recall"],
-            })
+            rows.append(
+                {
+                    "variant": variant_name,
+                    "group": " | ".join(str(k) for k in keys),
+                    "n_patches": agg["n_patches"],
+                    "mean_dice": agg["mean"]["dice"],
+                    "mean_iou": agg["mean"]["iou"],
+                    "mean_cldice": agg["mean"]["cldice"],
+                    "mean_f1": agg["mean"]["f1"],
+                    "mean_precision": agg["mean"]["precision"],
+                    "mean_recall": agg["mean"]["recall"],
+                    "micro_dice": agg["micro"]["dice"],
+                    "micro_iou": agg["micro"]["iou"],
+                    "micro_f1": agg["micro"]["f1"],
+                    "micro_precision": agg["micro"]["precision"],
+                    "micro_recall": agg["micro"]["recall"],
+                }
+            )
     return pd.DataFrame(rows)
 
 
 # ============================================================
 # PLOTS
 # ============================================================
+
 
 def plot_training_curves_overlay(runs, output_path):
     """Overlay val_score / val_dice / val_cldice curves across variants."""
@@ -246,17 +276,23 @@ def plot_training_curves_overlay(runs, output_path):
         if "val_cldice" in h.columns:
             axes[2].plot(h["epoch"], h["val_cldice"], linewidth=2, label=variant_name)
 
-    axes[0].set_xlabel("Epoch"); axes[0].set_ylabel("Val Score")
+    axes[0].set_xlabel("Epoch")
+    axes[0].set_ylabel("Val Score")
     axes[0].set_title("Val Score (Dice + clDice)/2")
-    axes[0].legend(); axes[0].grid(True, alpha=0.3)
+    axes[0].legend()
+    axes[0].grid(True, alpha=0.3)
 
-    axes[1].set_xlabel("Epoch"); axes[1].set_ylabel("Val Dice")
+    axes[1].set_xlabel("Epoch")
+    axes[1].set_ylabel("Val Dice")
     axes[1].set_title("Val Dice")
-    axes[1].legend(); axes[1].grid(True, alpha=0.3)
+    axes[1].legend()
+    axes[1].grid(True, alpha=0.3)
 
-    axes[2].set_xlabel("Epoch"); axes[2].set_ylabel("Val clDice")
+    axes[2].set_xlabel("Epoch")
+    axes[2].set_ylabel("Val clDice")
     axes[2].set_title("Val clDice")
-    axes[2].legend(); axes[2].grid(True, alpha=0.3)
+    axes[2].legend()
+    axes[2].grid(True, alpha=0.3)
 
     plt.tight_layout()
     plt.savefig(output_path, dpi=120, bbox_inches="tight")
@@ -266,14 +302,20 @@ def plot_training_curves_overlay(runs, output_path):
 
 def plot_final_metrics_bar(df_overall, output_path):
     """Bar chart of final test metrics per variant (mean per-patch)."""
-    metric_cols   = ["test_mean_dice", "test_mean_iou", "test_mean_cldice",
-                     "test_mean_f1", "test_mean_precision", "test_mean_recall"]
+    metric_cols = [
+        "test_mean_dice",
+        "test_mean_iou",
+        "test_mean_cldice",
+        "test_mean_f1",
+        "test_mean_precision",
+        "test_mean_recall",
+    ]
     metric_labels = ["Dice", "IoU", "clDice", "F1", "Precision", "Recall"]
 
     n_variants = len(df_overall)
-    n_metrics  = len(metric_cols)
-    x          = np.arange(n_metrics)
-    bar_width  = 0.8 / n_variants
+    n_metrics = len(metric_cols)
+    x = np.arange(n_metrics)
+    bar_width = 0.8 / n_variants
 
     fig, ax = plt.subplots(figsize=(12, 6))
     for i, (_, row) in enumerate(df_overall.iterrows()):
@@ -306,10 +348,10 @@ def plot_breakdown_by_category(df_breakdown, output_path):
 
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
     for ax, metric, title in [
-        (axes[0, 0], "mean_dice",      "Mean per-patch Dice"),
-        (axes[0, 1], "mean_cldice",    "Mean per-patch clDice"),
+        (axes[0, 0], "mean_dice", "Mean per-patch Dice"),
+        (axes[0, 1], "mean_cldice", "Mean per-patch clDice"),
         (axes[1, 0], "mean_precision", "Mean per-patch Precision"),
-        (axes[1, 1], "mean_recall",    "Mean per-patch Recall"),
+        (axes[1, 1], "mean_recall", "Mean per-patch Recall"),
     ]:
         pivot = df_pos.pivot(index="category", columns="variant", values=metric)
         existing_cats = [c for c in ["S", "M", "L"] if c in pivot.index]
@@ -360,30 +402,44 @@ def plot_distributions_comparison(runs, output_path, max_points_per_variant=1500
 
     # ---- Panel [0,0]: Boxplot Dice + clDice per variant ----
     ax = axes[0, 0]
-    positions_dice   = np.arange(n_var) * 3
+    positions_dice = np.arange(n_var) * 3
     positions_cldice = positions_dice + 1
 
-    data_dice   = [pos[pos["variant"] == v]["dice"].values   for v in variant_names]
+    data_dice = [pos[pos["variant"] == v]["dice"].values for v in variant_names]
     data_cldice = [pos[pos["variant"] == v]["cldice"].values for v in variant_names]
 
-    bp_dice = ax.boxplot(data_dice, positions=positions_dice, widths=0.8, patch_artist=True,
-                         boxprops=dict(facecolor="tab:blue", alpha=0.5),
-                         medianprops=dict(color="black"))
-    bp_cld  = ax.boxplot(data_cldice, positions=positions_cldice, widths=0.8, patch_artist=True,
-                         boxprops=dict(facecolor="tab:green", alpha=0.5),
-                         medianprops=dict(color="black"))
+    bp_dice = ax.boxplot(
+        data_dice,
+        positions=positions_dice,
+        widths=0.8,
+        patch_artist=True,
+        boxprops=dict(facecolor="tab:blue", alpha=0.5),
+        medianprops=dict(color="black"),
+    )
+    bp_cld = ax.boxplot(
+        data_cldice,
+        positions=positions_cldice,
+        widths=0.8,
+        patch_artist=True,
+        boxprops=dict(facecolor="tab:green", alpha=0.5),
+        medianprops=dict(color="black"),
+    )
 
     ax.set_xticks(positions_dice + 0.5)
     ax.set_xticklabels(variant_names, rotation=0)
     ax.set_ylabel("Score")
     ax.set_title("Distribution per variant (positive patches)")
-    ax.legend([bp_dice["boxes"][0], bp_cld["boxes"][0]], ["Dice", "clDice"], loc="lower right")
+    ax.legend(
+        [bp_dice["boxes"][0], bp_cld["boxes"][0]], ["Dice", "clDice"], loc="lower right"
+    )
     ax.grid(True, axis="y", alpha=0.3)
     ax.set_ylim(0, 1)
 
     # ---- Panel [0,1]: Heatmap variant x category (mean Dice) ----
     ax = axes[0, 1]
-    pivot = pos.pivot_table(index="variant", columns="category", values="dice", aggfunc="mean")
+    pivot = pos.pivot_table(
+        index="variant", columns="category", values="dice", aggfunc="mean"
+    )
     existing_cats = [c for c in ["S", "M", "L"] if c in pivot.columns]
     pivot = pivot.reindex(columns=existing_cats)
     pivot = pivot.reindex([v for v in variant_names if v in pivot.index])
@@ -401,8 +457,15 @@ def plot_distributions_comparison(runs, output_path, max_points_per_variant=1500
             val = pivot.values[i, j]
             if not np.isnan(val):
                 color = "black" if val > 0.5 else "white"
-                ax.text(j, i, f"{val:.3f}", ha="center", va="center",
-                        color=color, fontweight="bold")
+                ax.text(
+                    j,
+                    i,
+                    f"{val:.3f}",
+                    ha="center",
+                    va="center",
+                    color=color,
+                    fontweight="bold",
+                )
 
     plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 
@@ -413,12 +476,21 @@ def plot_distributions_comparison(runs, output_path, max_points_per_variant=1500
         v_data = pos[pos["variant"] == variant_name]
         if len(v_data) > max_points_per_variant:
             v_data = v_data.sample(max_points_per_variant, random_state=42)
-        ax.scatter(v_data["recall"], v_data["precision"],
-                   alpha=0.35, s=12, color=color, label=variant_name, edgecolors="none")
+        ax.scatter(
+            v_data["recall"],
+            v_data["precision"],
+            alpha=0.35,
+            s=12,
+            color=color,
+            label=variant_name,
+            edgecolors="none",
+        )
 
     ax.set_xlabel("Recall")
     ax.set_ylabel("Precision")
-    ax.set_title(f"Precision vs Recall per patch (positive, subsampled to {max_points_per_variant}/variant)")
+    ax.set_title(
+        f"Precision vs Recall per patch (positive, subsampled to {max_points_per_variant}/variant)"
+    )
     ax.legend(loc="best")
     ax.grid(True, alpha=0.3)
     ax.set_xlim(-0.02, 1.02)
@@ -432,8 +504,15 @@ def plot_distributions_comparison(runs, output_path, max_points_per_variant=1500
             v_data = v_data.sample(max_points_per_variant, random_state=42)
         # Filter out zeros for log scale
         v_data = v_data[v_data["n_label_px"] > 0]
-        ax.scatter(v_data["n_label_px"], v_data["dice"],
-                   alpha=0.35, s=12, color=color, label=variant_name, edgecolors="none")
+        ax.scatter(
+            v_data["n_label_px"],
+            v_data["dice"],
+            alpha=0.35,
+            s=12,
+            color=color,
+            label=variant_name,
+            edgecolors="none",
+        )
 
     ax.set_xscale("log")
     ax.set_xlabel("Number of label pixels (log scale)")
@@ -452,6 +531,7 @@ def plot_distributions_comparison(runs, output_path, max_points_per_variant=1500
 # ============================================================
 # MAIN
 # ============================================================
+
 
 def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -482,39 +562,74 @@ def main():
 
     # Plots
     print("\nGenerating plots...")
-    plot_training_curves_overlay(runs,       OUTPUT_DIR / "comparison_training_curves.png")
-    plot_final_metrics_bar(df_overall,       OUTPUT_DIR / "comparison_final_metrics.png")
-    plot_breakdown_by_category(df_by_cat,    OUTPUT_DIR / "comparison_by_category.png")
-    plot_distributions_comparison(runs,      OUTPUT_DIR / "comparison_distributions.png")
+    plot_training_curves_overlay(runs, OUTPUT_DIR / "comparison_training_curves.png")
+    plot_final_metrics_bar(df_overall, OUTPUT_DIR / "comparison_final_metrics.png")
+    plot_breakdown_by_category(df_by_cat, OUTPUT_DIR / "comparison_by_category.png")
+    plot_distributions_comparison(runs, OUTPUT_DIR / "comparison_distributions.png")
 
     # Console summary
     print("\n" + "=" * 70)
     print("OVERALL COMPARISON (test set, mean per-patch)")
     print("=" * 70)
-    cols = ["variant", "n_epochs_run", "best_epoch",
-            "test_mean_dice", "test_mean_iou", "test_mean_cldice", "test_mean_f1"]
+    cols = [
+        "variant",
+        "n_epochs_run",
+        "best_epoch",
+        "test_mean_dice",
+        "test_mean_iou",
+        "test_mean_cldice",
+        "test_mean_f1",
+    ]
     print(df_overall[cols].to_string(index=False, float_format=lambda x: f"{x:.4f}"))
 
     print("\n" + "=" * 70)
     print("MICRO-AVERAGED METRICS (test set)")
     print("=" * 70)
-    cols_micro = ["variant", "test_micro_dice", "test_micro_iou",
-                  "test_micro_f1", "test_micro_precision", "test_micro_recall"]
-    print(df_overall[cols_micro].to_string(index=False, float_format=lambda x: f"{x:.4f}"))
+    cols_micro = [
+        "variant",
+        "test_micro_dice",
+        "test_micro_iou",
+        "test_micro_f1",
+        "test_micro_precision",
+        "test_micro_recall",
+    ]
+    print(
+        df_overall[cols_micro].to_string(index=False, float_format=lambda x: f"{x:.4f}")
+    )
 
     # Improvements relative to the first variant (assumed baseline)
     if len(df_overall) >= 2:
         baseline = df_overall.iloc[0]
         print("\n" + "=" * 70)
-        print(f"IMPROVEMENT vs baseline '{baseline['variant']}'  (relative %, mean per-patch)")
+        print(
+            f"IMPROVEMENT vs baseline '{baseline['variant']}'  (relative %, mean per-patch)"
+        )
         print("=" * 70)
         for i in range(1, len(df_overall)):
             row = df_overall.iloc[i]
-            d_dice   = (row["test_mean_dice"]   - baseline["test_mean_dice"])   / max(baseline["test_mean_dice"],   1e-6) * 100
-            d_cldice = (row["test_mean_cldice"] - baseline["test_mean_cldice"]) / max(baseline["test_mean_cldice"], 1e-6) * 100
-            d_iou    = (row["test_mean_iou"]    - baseline["test_mean_iou"])    / max(baseline["test_mean_iou"],    1e-6) * 100
-            d_f1     = (row["test_mean_f1"]     - baseline["test_mean_f1"])     / max(baseline["test_mean_f1"],     1e-6) * 100
-            print(f"  {row['variant']:30s}  Dice {d_dice:+6.1f}%   clDice {d_cldice:+6.1f}%   IoU {d_iou:+6.1f}%   F1 {d_f1:+6.1f}%")
+            d_dice = (
+                (row["test_mean_dice"] - baseline["test_mean_dice"])
+                / max(baseline["test_mean_dice"], 1e-6)
+                * 100
+            )
+            d_cldice = (
+                (row["test_mean_cldice"] - baseline["test_mean_cldice"])
+                / max(baseline["test_mean_cldice"], 1e-6)
+                * 100
+            )
+            d_iou = (
+                (row["test_mean_iou"] - baseline["test_mean_iou"])
+                / max(baseline["test_mean_iou"], 1e-6)
+                * 100
+            )
+            d_f1 = (
+                (row["test_mean_f1"] - baseline["test_mean_f1"])
+                / max(baseline["test_mean_f1"], 1e-6)
+                * 100
+            )
+            print(
+                f"  {row['variant']:30s}  Dice {d_dice:+6.1f}%   clDice {d_cldice:+6.1f}%   IoU {d_iou:+6.1f}%   F1 {d_f1:+6.1f}%"
+            )
 
     print("\nDone.")
 

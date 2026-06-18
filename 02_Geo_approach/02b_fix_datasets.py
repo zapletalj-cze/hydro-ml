@@ -27,6 +27,7 @@ Version:  0.1
 """
 
 import warnings
+
 warnings.filterwarnings("ignore")
 
 from pathlib import Path
@@ -34,13 +35,16 @@ from pathlib import Path
 import pandas as pd
 import geopandas as gpd
 
-
 # ------------------------------------------------------------
 # Inputs — adjust per region
 # ------------------------------------------------------------
 REGIONS = {
-    "PL": Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\patches_v01_PL"),
-    "NL": Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\patches_v01_NL"),
+    "PL": Path(
+        r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\patches_v01_PL"
+    ),
+    "NL": Path(
+        r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\patches_v01_NL"
+    ),
 }
 
 

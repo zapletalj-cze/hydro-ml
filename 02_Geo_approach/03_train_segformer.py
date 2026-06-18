@@ -26,6 +26,7 @@ Version:  0.1
 """
 
 import warnings
+
 warnings.filterwarnings("ignore")
 
 import json
@@ -45,7 +46,8 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.cuda.amp import autocast
 from tqdm import tqdm
 import matplotlib
-matplotlib.use("Agg")               # no display required when running headless
+
+matplotlib.use("Agg")  # no display required when running headless
 import matplotlib.pyplot as plt
 import segmentation_models_pytorch as smp
 import time
@@ -55,13 +57,23 @@ import time
 # ============================================================
 
 # ------- Paths ----------------------------------------------
-PATCHES_DIR_PL  = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\patches_v01_PL\patches")
-PATCHES_DIR_NL  = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\patches_v01_NL\patches")
-METADATA_CSV_PL = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\patches_v01_PL\patches_metadata.csv")
-METADATA_CSV_NL = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\patches_v01_NL\patches_metadata.csv")
+PATCHES_DIR_PL = Path(
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\patches_v01_PL\patches"
+)
+PATCHES_DIR_NL = Path(
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\patches_v01_NL\patches"
+)
+METADATA_CSV_PL = Path(
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\patches_v01_PL\patches_metadata.csv"
+)
+METADATA_CSV_NL = Path(
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\patches_v01_NL\patches_metadata.csv"
+)
 
 # Output dir - MUST be unique per variant
-OUTPUT_DIR = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v03_segformer_v3_dsm_tpi_canopyheight")
+OUTPUT_DIR = Path(
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v03_segformer_v3_dsm_tpi_canopyheight"
+)
 
 
 # ------- Reproducibility ------------------------------------
@@ -79,42 +91,49 @@ NUM_WORKERS = 16
 # v1: INPUT_CHANNELS = ["dsm"]
 # v2: INPUT_CHANNELS = ["dsm", "tpi_r5", "tpi_r10", "tpi_r15"]
 # v3: INPUT_CHANNELS = ["dsm", "tpi_r5", "tpi_r10", "tpi_r15", "canopy_height", "canopy_height_sd"]
-INPUT_CHANNELS = ["dsm", "tpi_r5", "tpi_r10", "tpi_r15", "canopy_height", "canopy_height_sd"]
-LABEL_CHANNEL  = "label"
+INPUT_CHANNELS = [
+    "dsm",
+    "tpi_r5",
+    "tpi_r10",
+    "tpi_r15",
+    "canopy_height",
+    "canopy_height_sd",
+]
+LABEL_CHANNEL = "label"
 
 
 # ------- Train/val/test split -------------------------------
-SPLIT_BY   = "source_idx"
+SPLIT_BY = "source_idx"
 TRAIN_FRAC = 0.70
-VAL_FRAC   = 0.15
-TEST_FRAC  = 0.15
+VAL_FRAC = 0.15
+TEST_FRAC = 0.15
 
 
 # ------- Training hyperparameters ---------------------------
-BATCH_SIZE      = 16
-N_EPOCHS        = 175
-LR              = 1e-4
-WEIGHT_DECAY    = 1e-3
-GRAD_CLIP       = 1.0
+BATCH_SIZE = 16
+N_EPOCHS = 175
+LR = 1e-4
+WEIGHT_DECAY = 1e-3
+GRAD_CLIP = 1.0
 MIXED_PRECISION = True
 
 
 # ------- Loss function --------------------------------------
 LOSS_DICE_WEIGHT = 0.5
-CLDICE_ITER      = 5
-BCE_POS_WEIGHT   = 20.0
+CLDICE_ITER = 5
+BCE_POS_WEIGHT = 20.0
 
 
 # ------- Architecture ---------------------------------------
 # One of: "resnet_unet" | "segformer" | "deeplabv3plus"
 ARCHITECTURE = "segformer"
 
-RESNET_BACKBONE     = "resnet34"
-SEGFORMER_BACKBONE  = "mit_b2"
-DEEPLAB_BACKBONE    = "resnet50"
+RESNET_BACKBONE = "resnet34"
+SEGFORMER_BACKBONE = "mit_b2"
+DEEPLAB_BACKBONE = "resnet50"
 
-RESNET_ENCODER_WEIGHTS    = "imagenet"
-DEEPLAB_ENCODER_WEIGHTS   = "imagenet"
+RESNET_ENCODER_WEIGHTS = "imagenet"
+DEEPLAB_ENCODER_WEIGHTS = "imagenet"
 SEGFORMER_ENCODER_WEIGHTS = "imagenet"
 
 DECODER_DROPOUT_P = 0.1
@@ -127,17 +146,18 @@ USE_ROT_90 = True
 
 
 # ------- Evaluation ------------------------------------------
-SAVE_PREDICTIONS = True   # save per-patch predictions for stacking
+SAVE_PREDICTIONS = True  # save per-patch predictions for stacking
 
 
 # Derived (do not edit)
 N_INPUT_CHANNELS = len(INPUT_CHANNELS)
-DEVICE           = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 # ============================================================
 # LOGGING
 # ============================================================
+
 
 def setup_logging(output_dir):
     """Configure logging to both console and a file inside output_dir."""
@@ -170,6 +190,7 @@ def setup_logging(output_dir):
 # DATASET
 # ============================================================
 
+
 class LeveeDataset(Dataset):
     """
     Loads .npz patches and applies normalization + augmentation.
@@ -177,7 +198,9 @@ class LeveeDataset(Dataset):
     patch_id (str), category (str).
     """
 
-    def __init__(self, metadata_df, patches_root_dirs, input_channels, norm_stats, augment=False):
+    def __init__(
+        self, metadata_df, patches_root_dirs, input_channels, norm_stats, augment=False
+    ):
         self.metadata = metadata_df.reset_index(drop=True)
         self.patches_root_dirs = patches_root_dirs
         self.input_channels = input_channels
@@ -231,8 +254,8 @@ class LeveeDataset(Dataset):
             image, label = self._augment(image, label)
 
         return {
-            "image":    torch.from_numpy(image),
-            "label":    torch.from_numpy(label),
+            "image": torch.from_numpy(image),
+            "label": torch.from_numpy(label),
             "patch_id": row["patch_id"],
             "category": row["category"],
         }
@@ -241,6 +264,7 @@ class LeveeDataset(Dataset):
 # ============================================================
 # LOSS
 # ============================================================
+
 
 def soft_skeleton(x, n_iter):
     def soft_erode(img):
@@ -287,8 +311,8 @@ def cldice_loss(pred, target, n_iter, eps=1e-6):
 
 def combined_loss(pred, target):
     pw = torch.tensor(BCE_POS_WEIGHT, device=pred.device, dtype=pred.dtype)
-    l_bce    = F.binary_cross_entropy_with_logits(pred, target, pos_weight=pw)
-    l_dice   = dice_loss(pred, target)
+    l_bce = F.binary_cross_entropy_with_logits(pred, target, pos_weight=pw)
+    l_dice = dice_loss(pred, target)
     l_cldice = cldice_loss(pred, target, n_iter=CLDICE_ITER)
     return l_bce + LOSS_DICE_WEIGHT * l_dice + (1 - LOSS_DICE_WEIGHT) * l_cldice
 
@@ -296,6 +320,7 @@ def combined_loss(pred, target):
 # ============================================================
 # MODEL
 # ============================================================
+
 
 def adapt_first_conv_for_extra_channels(model, n_input_channels):
     """Replicate 3-channel pretrained first-conv weights for N-channel input (ResNet family)."""
@@ -311,9 +336,14 @@ def adapt_first_conv_for_extra_channels(model, n_input_channels):
     new_weight = new_weight[:, :n_input_channels, :, :]
     new_weight = new_weight / (n_input_channels / 3)
 
-    new_conv = nn.Conv2d(n_input_channels, out_ch, kernel_size=(kh, kw),
-                         stride=first_conv.stride, padding=first_conv.padding,
-                         bias=first_conv.bias is not None)
+    new_conv = nn.Conv2d(
+        n_input_channels,
+        out_ch,
+        kernel_size=(kh, kw),
+        stride=first_conv.stride,
+        padding=first_conv.padding,
+        bias=first_conv.bias is not None,
+    )
     new_conv.weight.data = new_weight
     if first_conv.bias is not None:
         new_conv.bias.data = first_conv.bias.data.clone()
@@ -336,9 +366,14 @@ def adapt_first_conv_segformer(model, n_input_channels):
     new_weight = new_weight[:, :n_input_channels, :, :]
     new_weight = new_weight / (n_input_channels / 3)
 
-    new_conv = nn.Conv2d(n_input_channels, out_ch, kernel_size=(kh, kw),
-                         stride=first_conv.stride, padding=first_conv.padding,
-                         bias=first_conv.bias is not None)
+    new_conv = nn.Conv2d(
+        n_input_channels,
+        out_ch,
+        kernel_size=(kh, kw),
+        stride=first_conv.stride,
+        padding=first_conv.padding,
+        bias=first_conv.bias is not None,
+    )
     new_conv.weight.data = new_weight
     if first_conv.bias is not None:
         new_conv.bias.data = first_conv.bias.data.clone()
@@ -350,18 +385,33 @@ def adapt_first_conv_segformer(model, n_input_channels):
 def build_model():
     """Build model based on ARCHITECTURE, with first-conv channel adaptation and decoder dropout."""
     if ARCHITECTURE == "resnet_unet":
-        model = smp.Unet(encoder_name=RESNET_BACKBONE, encoder_weights=RESNET_ENCODER_WEIGHTS,
-                         in_channels=3, classes=1, activation=None)
+        model = smp.Unet(
+            encoder_name=RESNET_BACKBONE,
+            encoder_weights=RESNET_ENCODER_WEIGHTS,
+            in_channels=3,
+            classes=1,
+            activation=None,
+        )
         model = adapt_first_conv_for_extra_channels(model, N_INPUT_CHANNELS)
 
     elif ARCHITECTURE == "segformer":
-        model = smp.Segformer(encoder_name=SEGFORMER_BACKBONE, encoder_weights=SEGFORMER_ENCODER_WEIGHTS,
-                              in_channels=3, classes=1, activation=None)
+        model = smp.Segformer(
+            encoder_name=SEGFORMER_BACKBONE,
+            encoder_weights=SEGFORMER_ENCODER_WEIGHTS,
+            in_channels=3,
+            classes=1,
+            activation=None,
+        )
         model = adapt_first_conv_segformer(model, N_INPUT_CHANNELS)
 
     elif ARCHITECTURE == "deeplabv3plus":
-        model = smp.DeepLabV3Plus(encoder_name=DEEPLAB_BACKBONE, encoder_weights=DEEPLAB_ENCODER_WEIGHTS,
-                                  in_channels=3, classes=1, activation=None)
+        model = smp.DeepLabV3Plus(
+            encoder_name=DEEPLAB_BACKBONE,
+            encoder_weights=DEEPLAB_ENCODER_WEIGHTS,
+            in_channels=3,
+            classes=1,
+            activation=None,
+        )
         model = adapt_first_conv_for_extra_channels(model, N_INPUT_CHANNELS)
 
     else:
@@ -371,11 +421,17 @@ def build_model():
     if ARCHITECTURE == "resnet_unet":
         for block in model.decoder.blocks:
             block.conv2 = nn.Sequential(block.conv2, nn.Dropout2d(p=DECODER_DROPOUT_P))
-        logging.info(f"Decoder dropout: {DECODER_DROPOUT_P} (applied to {len(model.decoder.blocks)} U-Net blocks)")
+        logging.info(
+            f"Decoder dropout: {DECODER_DROPOUT_P} (applied to {len(model.decoder.blocks)} U-Net blocks)"
+        )
     elif ARCHITECTURE == "deeplabv3plus":
         if hasattr(model.decoder, "block2"):
-            model.decoder.block2 = nn.Sequential(model.decoder.block2, nn.Dropout2d(p=DECODER_DROPOUT_P))
-            logging.info(f"Decoder dropout: {DECODER_DROPOUT_P} (applied to DeepLabV3+ block2)")
+            model.decoder.block2 = nn.Sequential(
+                model.decoder.block2, nn.Dropout2d(p=DECODER_DROPOUT_P)
+            )
+            logging.info(
+                f"Decoder dropout: {DECODER_DROPOUT_P} (applied to DeepLabV3+ block2)"
+            )
         else:
             logging.warning("DeepLabV3+ decoder.block2 not found - skipping dropout")
     elif ARCHITECTURE == "segformer":
@@ -391,6 +447,7 @@ def build_model():
 # ============================================================
 # DATA LOADING + SPLIT
 # ============================================================
+
 
 def load_and_split_metadata():
     """Load PL+NL metadata, build source-grouped train/val/test split."""
@@ -409,21 +466,21 @@ def load_and_split_metadata():
 
     n_total = len(unique_sources)
     n_train = int(n_total * TRAIN_FRAC)
-    n_val   = int(n_total * VAL_FRAC)
+    n_val = int(n_total * VAL_FRAC)
 
     train_sources = set(unique_sources[:n_train])
-    val_sources   = set(unique_sources[n_train:n_train + n_val])
-    test_sources  = set(unique_sources[n_train + n_val:])
+    val_sources = set(unique_sources[n_train : n_train + n_val])
+    test_sources = set(unique_sources[n_train + n_val :])
 
     df["split"] = df["source_idx_global"].apply(
-        lambda s: "train" if s in train_sources
-        else "val" if s in val_sources
-        else "test"
+        lambda s: (
+            "train" if s in train_sources else "val" if s in val_sources else "test"
+        )
     )
 
     df_train = df[df["split"] == "train"].reset_index(drop=True)
-    df_val   = df[df["split"] == "val"].reset_index(drop=True)
-    df_test  = df[df["split"] == "test"].reset_index(drop=True)
+    df_val = df[df["split"] == "val"].reset_index(drop=True)
+    df_test = df[df["split"] == "test"].reset_index(drop=True)
 
     logging.info(f"Total patches: {len(df)}")
     logging.info(f"  Train: {len(df_train)} ({len(df_train)/len(df)*100:.1f}%)")
@@ -431,7 +488,9 @@ def load_and_split_metadata():
     logging.info(f"  Test:  {len(df_test)} ({len(df_test)/len(df)*100:.1f}%)")
 
     df.to_csv(OUTPUT_DIR / "metadata_with_split.csv", index=False)
-    logging.info(f"First test patch_ids (sanity check): {df_test['patch_id'].head().tolist()}")
+    logging.info(
+        f"First test patch_ids (sanity check): {df_test['patch_id'].head().tolist()}"
+    )
 
     return df_train, df_val, df_test
 
@@ -446,33 +505,42 @@ def compute_or_load_norm_stats(df_train):
             return json.load(f)
 
     channels_to_normalize = [c for c in INPUT_CHANNELS if c != "dsm"]
-    sums    = {c: 0.0 for c in channels_to_normalize}
+    sums = {c: 0.0 for c in channels_to_normalize}
     sq_sums = {c: 0.0 for c in channels_to_normalize}
-    counts  = {c: 0   for c in channels_to_normalize}
+    counts = {c: 0 for c in channels_to_normalize}
 
-    for _, row in tqdm(df_train.iterrows(), total=len(df_train), desc="Computing norm stats"):
-        npz_path = {"PL": PATCHES_DIR_PL, "NL": PATCHES_DIR_NL}[row["region"]] / f"{row['patch_id']}.npz"
+    for _, row in tqdm(
+        df_train.iterrows(), total=len(df_train), desc="Computing norm stats"
+    ):
+        npz_path = {"PL": PATCHES_DIR_PL, "NL": PATCHES_DIR_NL}[
+            row["region"]
+        ] / f"{row['patch_id']}.npz"
         channels = dict(np.load(npz_path))
         for c in channels_to_normalize:
             arr = np.nan_to_num(channels[c].astype(np.float64))
-            sums[c]    += arr.sum()
-            sq_sums[c] += (arr ** 2).sum()
-            counts[c]  += arr.size
+            sums[c] += arr.sum()
+            sq_sums[c] += (arr**2).sum()
+            counts[c] += arr.size
 
     norm_stats = {}
     for c in channels_to_normalize:
         mean = sums[c] / counts[c]
-        var  = sq_sums[c] / counts[c] - mean ** 2
-        std  = np.sqrt(max(var, 1e-12))
+        var = sq_sums[c] / counts[c] - mean**2
+        std = np.sqrt(max(var, 1e-12))
         norm_stats[c] = {"mean": float(mean), "std": float(std)}
 
-    norm_stats["dsm"] = {"mean": 0.0, "std": 1.0}   # sentinel; DSM is per-patch normalized
+    norm_stats["dsm"] = {
+        "mean": 0.0,
+        "std": 1.0,
+    }  # sentinel; DSM is per-patch normalized
 
     with open(norm_stats_path, "w") as f:
         json.dump(norm_stats, f, indent=2)
 
     for c, s in norm_stats.items():
-        logging.info(f"  norm_stats {c:20s}  mean={s['mean']:8.3f}  std={s['std']:8.3f}")
+        logging.info(
+            f"  norm_stats {c:20s}  mean={s['mean']:8.3f}  std={s['std']:8.3f}"
+        )
 
     return norm_stats
 
@@ -480,18 +548,29 @@ def compute_or_load_norm_stats(df_train):
 def build_dataloaders(df_train, df_val, norm_stats):
     patches_root_dirs = {"PL": PATCHES_DIR_PL, "NL": PATCHES_DIR_NL}
 
-    train_ds = LeveeDataset(df_train, patches_root_dirs, INPUT_CHANNELS, norm_stats, augment=True)
-    val_ds   = LeveeDataset(df_val,   patches_root_dirs, INPUT_CHANNELS, norm_stats, augment=False)
+    train_ds = LeveeDataset(
+        df_train, patches_root_dirs, INPUT_CHANNELS, norm_stats, augment=True
+    )
+    val_ds = LeveeDataset(
+        df_val, patches_root_dirs, INPUT_CHANNELS, norm_stats, augment=False
+    )
 
     train_loader = DataLoader(
-        train_ds, batch_size=BATCH_SIZE, shuffle=True,
-        num_workers=NUM_WORKERS, pin_memory=True, drop_last=True,
+        train_ds,
+        batch_size=BATCH_SIZE,
+        shuffle=True,
+        num_workers=NUM_WORKERS,
+        pin_memory=True,
+        drop_last=True,
         persistent_workers=(NUM_WORKERS > 0),
         prefetch_factor=4 if NUM_WORKERS > 0 else None,
     )
     val_loader = DataLoader(
-        val_ds, batch_size=BATCH_SIZE, shuffle=False,
-        num_workers=NUM_WORKERS, pin_memory=True,
+        val_ds,
+        batch_size=BATCH_SIZE,
+        shuffle=False,
+        num_workers=NUM_WORKERS,
+        pin_memory=True,
         persistent_workers=(NUM_WORKERS > 0),
         prefetch_factor=4 if NUM_WORKERS > 0 else None,
     )
@@ -502,14 +581,20 @@ def build_dataloaders(df_train, df_val, norm_stats):
 # TRAIN
 # ============================================================
 
+
 def train(model, train_loader, val_loader):
     optimizer = AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
     scheduler = CosineAnnealingLR(optimizer, T_max=N_EPOCHS, eta_min=LR * 0.01)
     scaler = torch.amp.GradScaler(device="cuda", enabled=MIXED_PRECISION)
 
     history = {
-        "epoch": [], "train_loss": [], "val_loss": [],
-        "val_dice": [], "val_cldice": [], "val_score": [], "lr": [],
+        "epoch": [],
+        "train_loss": [],
+        "val_loss": [],
+        "val_dice": [],
+        "val_cldice": [],
+        "val_score": [],
+        "lr": [],
     }
     best_val_score = -float("inf")
     checkpoint_path = OUTPUT_DIR / "best_model.pt"
@@ -561,18 +646,22 @@ def train(model, train_loader, val_loader):
                 val_dice_sum += dice.mean().item()
 
                 skel_p = soft_skeleton(pred_bin, CLDICE_ITER)
-                skel_l = soft_skeleton(label,    CLDICE_ITER)
-                tprec = ((skel_p * label).sum(dim=(1, 2, 3)) + 1e-6) / (skel_p.sum(dim=(1, 2, 3)) + 1e-6)
-                trec  = ((pred_bin * skel_l).sum(dim=(1, 2, 3)) + 1e-6) / (skel_l.sum(dim=(1, 2, 3)) + 1e-6)
+                skel_l = soft_skeleton(label, CLDICE_ITER)
+                tprec = ((skel_p * label).sum(dim=(1, 2, 3)) + 1e-6) / (
+                    skel_p.sum(dim=(1, 2, 3)) + 1e-6
+                )
+                trec = ((pred_bin * skel_l).sum(dim=(1, 2, 3)) + 1e-6) / (
+                    skel_l.sum(dim=(1, 2, 3)) + 1e-6
+                )
                 cldice = 2 * tprec * trec / (tprec + trec)
                 val_cldice_sum += cldice.mean().item()
 
                 n_val_batches += 1
 
-        val_loss   = val_loss_sum   / n_val_batches
-        val_dice   = val_dice_sum   / n_val_batches
+        val_loss = val_loss_sum / n_val_batches
+        val_dice = val_dice_sum / n_val_batches
         val_cldice = val_cldice_sum / n_val_batches
-        val_score  = (val_dice + val_cldice) / 2
+        val_score = (val_dice + val_cldice) / 2
 
         current_lr = optimizer.param_groups[0]["lr"]
         history["epoch"].append(epoch + 1)
@@ -594,15 +683,18 @@ def train(model, train_loader, val_loader):
 
         if val_score > best_val_score:
             best_val_score = val_score
-            torch.save({
-                "epoch": epoch + 1,
-                "model_state": model.state_dict(),
-                "optimizer_state": optimizer.state_dict(),
-                "val_loss":   val_loss,
-                "val_dice":   val_dice,
-                "val_cldice": val_cldice,
-                "val_score":  val_score,
-            }, checkpoint_path)
+            torch.save(
+                {
+                    "epoch": epoch + 1,
+                    "model_state": model.state_dict(),
+                    "optimizer_state": optimizer.state_dict(),
+                    "val_loss": val_loss,
+                    "val_dice": val_dice,
+                    "val_cldice": val_cldice,
+                    "val_score": val_score,
+                },
+                checkpoint_path,
+            )
             logging.info(f"  -> new best (val_score={val_score:.4f}); saved checkpoint")
 
     pd.DataFrame(history).to_csv(OUTPUT_DIR / "training_history.csv", index=False)
@@ -615,26 +707,69 @@ def plot_training_curves(history):
 
     best_epoch = int(hist_df.loc[hist_df["val_score"].idxmax(), "epoch"])
 
-    axes[0].plot(hist_df["epoch"], hist_df["train_loss"], label="Train loss", linewidth=2)
-    axes[0].plot(hist_df["epoch"], hist_df["val_loss"],   label="Val loss",   linewidth=2)
-    axes[0].axvline(best_epoch, color="grey", linestyle="--", linewidth=1, label=f"Best epoch ({best_epoch})")
+    axes[0].plot(
+        hist_df["epoch"], hist_df["train_loss"], label="Train loss", linewidth=2
+    )
+    axes[0].plot(hist_df["epoch"], hist_df["val_loss"], label="Val loss", linewidth=2)
+    axes[0].axvline(
+        best_epoch,
+        color="grey",
+        linestyle="--",
+        linewidth=1,
+        label=f"Best epoch ({best_epoch})",
+    )
     axes[0].set_xlabel("Epoch")
     axes[0].set_ylabel("Loss")
     axes[0].set_title("Training & Validation Loss")
-    axes[0].legend(); axes[0].grid(True, alpha=0.3)
+    axes[0].legend()
+    axes[0].grid(True, alpha=0.3)
 
-    axes[1].plot(hist_df["epoch"], hist_df["val_dice"],   color="tab:green",  linewidth=2, label="Val Dice")
-    axes[1].plot(hist_df["epoch"], hist_df["val_cldice"], color="tab:purple", linewidth=2, label="Val clDice")
-    axes[1].axvline(best_epoch, color="grey", linestyle="--", linewidth=1, label=f"Best epoch ({best_epoch})")
-    axes[1].set_xlabel("Epoch"); axes[1].set_ylabel("Score")
+    axes[1].plot(
+        hist_df["epoch"],
+        hist_df["val_dice"],
+        color="tab:green",
+        linewidth=2,
+        label="Val Dice",
+    )
+    axes[1].plot(
+        hist_df["epoch"],
+        hist_df["val_cldice"],
+        color="tab:purple",
+        linewidth=2,
+        label="Val clDice",
+    )
+    axes[1].axvline(
+        best_epoch,
+        color="grey",
+        linestyle="--",
+        linewidth=1,
+        label=f"Best epoch ({best_epoch})",
+    )
+    axes[1].set_xlabel("Epoch")
+    axes[1].set_ylabel("Score")
     axes[1].set_title("Validation Dice & clDice")
-    axes[1].legend(); axes[1].grid(True, alpha=0.3)
+    axes[1].legend()
+    axes[1].grid(True, alpha=0.3)
 
-    axes[2].plot(hist_df["epoch"], hist_df["val_score"], color="tab:orange", linewidth=2, label="Val Score (Dice+clDice)/2")
-    axes[2].axvline(best_epoch, color="grey", linestyle="--", linewidth=1, label=f"Best epoch ({best_epoch})")
-    axes[2].set_xlabel("Epoch"); axes[2].set_ylabel("Combined Score")
+    axes[2].plot(
+        hist_df["epoch"],
+        hist_df["val_score"],
+        color="tab:orange",
+        linewidth=2,
+        label="Val Score (Dice+clDice)/2",
+    )
+    axes[2].axvline(
+        best_epoch,
+        color="grey",
+        linestyle="--",
+        linewidth=1,
+        label=f"Best epoch ({best_epoch})",
+    )
+    axes[2].set_xlabel("Epoch")
+    axes[2].set_ylabel("Combined Score")
     axes[2].set_title("Combined Selection Criterion")
-    axes[2].legend(); axes[2].grid(True, alpha=0.3)
+    axes[2].legend()
+    axes[2].grid(True, alpha=0.3)
 
     plt.tight_layout()
     out_path = OUTPUT_DIR / "training_curves.png"
@@ -646,6 +781,7 @@ def plot_training_curves(history):
 # ============================================================
 # EVALUATION  (with extended metrics: TP/FP/FN/TN, precision, recall, F1)
 # ============================================================
+
 
 def evaluate_split(model, df_split, split_name, norm_stats, patches_root_dirs):
     """
@@ -660,10 +796,15 @@ def evaluate_split(model, df_split, split_name, norm_stats, patches_root_dirs):
     if SAVE_PREDICTIONS:
         pred_dir.mkdir(exist_ok=True)
 
-    ds = LeveeDataset(df_split, patches_root_dirs, INPUT_CHANNELS, norm_stats, augment=False)
+    ds = LeveeDataset(
+        df_split, patches_root_dirs, INPUT_CHANNELS, norm_stats, augment=False
+    )
     loader = DataLoader(
-        ds, batch_size=BATCH_SIZE, shuffle=False,
-        num_workers=NUM_WORKERS, pin_memory=True,
+        ds,
+        batch_size=BATCH_SIZE,
+        shuffle=False,
+        num_workers=NUM_WORKERS,
+        pin_memory=True,
         persistent_workers=(NUM_WORKERS > 0),
     )
 
@@ -680,8 +821,8 @@ def evaluate_split(model, df_split, split_name, norm_stats, patches_root_dirs):
             pred_bin = (pred_prob > 0.5).float()
 
             for i in range(image.size(0)):
-                p = pred_bin[i:i+1]
-                l = label[i:i+1]
+                p = pred_bin[i : i + 1]
+                l = label[i : i + 1]
 
                 # Counts (confusion matrix)
                 tp = int((p * l).sum().item())
@@ -691,42 +832,47 @@ def evaluate_split(model, df_split, split_name, norm_stats, patches_root_dirs):
 
                 # Derived from counts
                 precision = tp / (tp + fp + 1e-6)
-                recall    = tp / (tp + fn + 1e-6)
-                f1        = 2 * precision * recall / (precision + recall + 1e-6)
-                iou       = tp / (tp + fp + fn + 1e-6)
-                dice      = 2 * tp / (2 * tp + fp + fn + 1e-6)
+                recall = tp / (tp + fn + 1e-6)
+                f1 = 2 * precision * recall / (precision + recall + 1e-6)
+                iou = tp / (tp + fp + fn + 1e-6)
+                dice = 2 * tp / (2 * tp + fp + fn + 1e-6)
 
                 # clDice on binarized prediction
                 skel_p = soft_skeleton(p, CLDICE_ITER)
                 skel_l = soft_skeleton(l, CLDICE_ITER)
-                tprec  = ((skel_p * l).sum() + 1e-6) / (skel_p.sum() + 1e-6)
-                trec   = ((p * skel_l).sum() + 1e-6) / (skel_l.sum() + 1e-6)
+                tprec = ((skel_p * l).sum() + 1e-6) / (skel_p.sum() + 1e-6)
+                trec = ((p * skel_l).sum() + 1e-6) / (skel_l.sum() + 1e-6)
                 cldice = (2 * tprec * trec / (tprec + trec)).item()
 
-                records.append({
-                    "patch_id":   batch["patch_id"][i],
-                    "category":   batch["category"][i],
-                    "tp":         tp,
-                    "fp":         fp,
-                    "fn":         fn,
-                    "tn":         tn,
-                    "precision":  precision,
-                    "recall":     recall,
-                    "f1":         f1,
-                    "dice":       dice,
-                    "iou":        iou,
-                    "cldice":     cldice,
-                    "n_label_px": int(l.sum().item()),
-                })
+                records.append(
+                    {
+                        "patch_id": batch["patch_id"][i],
+                        "category": batch["category"][i],
+                        "tp": tp,
+                        "fp": fp,
+                        "fn": fn,
+                        "tn": tn,
+                        "precision": precision,
+                        "recall": recall,
+                        "f1": f1,
+                        "dice": dice,
+                        "iou": iou,
+                        "cldice": cldice,
+                        "n_label_px": int(l.sum().item()),
+                    }
+                )
 
                 if SAVE_PREDICTIONS:
                     pred_to_save = pred_prob[i, 0].cpu().numpy().astype(np.float16)
-                    np.savez_compressed(pred_dir / f"{batch['patch_id'][i]}.npz", pred=pred_to_save)
+                    np.savez_compressed(
+                        pred_dir / f"{batch['patch_id'][i]}.npz", pred=pred_to_save
+                    )
 
     df_results = pd.DataFrame(records)
     df_results = df_results.merge(
         df_split[["patch_id", "region", "patch_type"]],
-        on="patch_id", how="left",
+        on="patch_id",
+        how="left",
     )
     return df_results
 
@@ -755,10 +901,18 @@ def report_metrics(df_results, split_name):
 
     # Overall: both mean per-patch AND micro-averaged (from summed counts)
     logging.info(f"\n--- {split_name}: Overall ---")
-    logging.info(f"  Mean per-patch Dice:   {df_results['dice'].mean():.4f} +/- {df_results['dice'].std():.4f}")
-    logging.info(f"  Mean per-patch IoU:    {df_results['iou'].mean():.4f} +/- {df_results['iou'].std():.4f}")
-    logging.info(f"  Mean per-patch clDice: {df_results['cldice'].mean():.4f} +/- {df_results['cldice'].std():.4f}")
-    logging.info(f"  Mean per-patch F1:     {df_results['f1'].mean():.4f} +/- {df_results['f1'].std():.4f}")
+    logging.info(
+        f"  Mean per-patch Dice:   {df_results['dice'].mean():.4f} +/- {df_results['dice'].std():.4f}"
+    )
+    logging.info(
+        f"  Mean per-patch IoU:    {df_results['iou'].mean():.4f} +/- {df_results['iou'].std():.4f}"
+    )
+    logging.info(
+        f"  Mean per-patch clDice: {df_results['cldice'].mean():.4f} +/- {df_results['cldice'].std():.4f}"
+    )
+    logging.info(
+        f"  Mean per-patch F1:     {df_results['f1'].mean():.4f} +/- {df_results['f1'].std():.4f}"
+    )
 
     total_tp = int(df_results["tp"].sum())
     total_fp = int(df_results["fp"].sum())
@@ -766,10 +920,12 @@ def report_metrics(df_results, split_name):
     total_tn = int(df_results["tn"].sum())
 
     micro_precision = total_tp / (total_tp + total_fp + 1e-6)
-    micro_recall    = total_tp / (total_tp + total_fn + 1e-6)
-    micro_f1        = 2 * micro_precision * micro_recall / (micro_precision + micro_recall + 1e-6)
-    micro_iou       = total_tp / (total_tp + total_fp + total_fn + 1e-6)
-    micro_dice      = 2 * total_tp / (2 * total_tp + total_fp + total_fn + 1e-6)
+    micro_recall = total_tp / (total_tp + total_fn + 1e-6)
+    micro_f1 = (
+        2 * micro_precision * micro_recall / (micro_precision + micro_recall + 1e-6)
+    )
+    micro_iou = total_tp / (total_tp + total_fp + total_fn + 1e-6)
+    micro_dice = 2 * total_tp / (2 * total_tp + total_fp + total_fn + 1e-6)
 
     logging.info(f"  Confusion matrix (summed over patches):")
     logging.info(f"    TP = {total_tp:>12,}    FP = {total_fp:>12,}")
@@ -787,6 +943,7 @@ def report_metrics(df_results, split_name):
 # MAIN
 # ============================================================
 
+
 def main():
     # Reproducibility
     random.seed(SEED)
@@ -800,7 +957,9 @@ def main():
     log.info(f"Device: {DEVICE}")
     log.info(f"Architecture: {ARCHITECTURE}")
     log.info(f"Input channels ({N_INPUT_CHANNELS}): {INPUT_CHANNELS}")
-    log.info(f"Hyperparams: batch={BATCH_SIZE}, epochs={N_EPOCHS}, lr={LR}, wd={WEIGHT_DECAY}")
+    log.info(
+        f"Hyperparams: batch={BATCH_SIZE}, epochs={N_EPOCHS}, lr={LR}, wd={WEIGHT_DECAY}"
+    )
     log.info(f"num_workers={NUM_WORKERS}")
 
     # 1. Load data and split
@@ -810,7 +969,9 @@ def main():
     norm_stats = compute_or_load_norm_stats(df_train)
 
     # 3. Build dataloaders
-    train_loader, val_loader, patches_root_dirs = build_dataloaders(df_train, df_val, norm_stats)
+    train_loader, val_loader, patches_root_dirs = build_dataloaders(
+        df_train, df_val, norm_stats
+    )
 
     # 4. Build model
     model = build_model()
@@ -827,24 +988,26 @@ def main():
     checkpoint = torch.load(checkpoint_path, map_location=DEVICE)
     model.load_state_dict(checkpoint["model_state"])
     model.eval()
-    log.info(f"Best checkpoint from epoch {checkpoint['epoch']}: "
-             f"val_score={checkpoint.get('val_score', float('nan')):.4f}, "
-             f"val_dice={checkpoint['val_dice']:.4f}, "
-             f"val_cldice={checkpoint.get('val_cldice', float('nan')):.4f}")
+    log.info(
+        f"Best checkpoint from epoch {checkpoint['epoch']}: "
+        f"val_score={checkpoint.get('val_score', float('nan')):.4f}, "
+        f"val_dice={checkpoint['val_dice']:.4f}, "
+        f"val_cldice={checkpoint.get('val_cldice', float('nan')):.4f}"
+    )
 
-    val_results  = evaluate_split(model, df_val,  "val",  norm_stats, patches_root_dirs)
+    val_results = evaluate_split(model, df_val, "val", norm_stats, patches_root_dirs)
     test_results = evaluate_split(model, df_test, "test", norm_stats, patches_root_dirs)
 
-    val_results.to_csv (OUTPUT_DIR / "val_results_per_patch.csv",  index=False)
+    val_results.to_csv(OUTPUT_DIR / "val_results_per_patch.csv", index=False)
     test_results.to_csv(OUTPUT_DIR / "test_results_per_patch.csv", index=False)
 
-    report_metrics(val_results,  "val")
+    report_metrics(val_results, "val")
     agg_cat, agg_region = report_metrics(test_results, "test")
     agg_cat.to_csv(OUTPUT_DIR / "test_results_by_category.csv")
     agg_region.to_csv(OUTPUT_DIR / "test_results_by_region.csv")
 
     if SAVE_PREDICTIONS:
-        n_val  = len(list((OUTPUT_DIR / "predictions_val").glob("*.npz")))
+        n_val = len(list((OUTPUT_DIR / "predictions_val").glob("*.npz")))
         n_test = len(list((OUTPUT_DIR / "predictions_test").glob("*.npz")))
         log.info(f"Saved predictions: val={n_val}, test={n_test} files")
 

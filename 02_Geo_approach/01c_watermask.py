@@ -15,6 +15,7 @@ Version:  0.2   (simplified from prepare_water_distance: binary mask only)
 """
 
 import warnings
+
 warnings.filterwarnings("ignore")
 
 import tempfile
@@ -24,6 +25,7 @@ import numpy as np
 import geopandas as gpd
 
 from osgeo import gdal, osr
+
 gdal.UseExceptions()
 
 
@@ -33,22 +35,31 @@ gdal.UseExceptions()
 
 # OSM water vector (polygons preferred: natural=water, landuse=reservoir,
 # water=river/riverbank; line waterways are buffered, see WATERWAY_LINE_BUFFER_M).
-WATER_VECTOR_PATH = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\source\pl\osm_water_pl.gpkg")
-WATER_LAYER       = None     # layer name, or None to use the first layer
+WATER_VECTOR_PATH = Path(
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\source\pl\osm_water_pl.gpkg"
+)
+WATER_LAYER = None  # layer name, or None to use the first layer
 
 # Reference raster defines the output grid: extent, resolution, CRS, alignment.
 # Use the SAME DSM the patch generator / inference reads.
-REFERENCE_RASTER  = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\COP_DSM\COP_DSM_Poland_2180_c.tif")
+REFERENCE_RASTER = Path(
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\COP_DSM\COP_DSM_Poland_2180_c.tif"
+)
 
-OUTPUT_WATER_TIF  = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\source\pl\water_mask_pl.tif")
+OUTPUT_WATER_TIF = Path(
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\source\pl\water_mask_pl.tif"
+)
 
-WATERWAY_LINE_BUFFER_M = 5.0   # buffer line geometries (narrow rivers) by this; 0 ignores lines
-ALL_TOUCHED            = True  # burn every pixel a geometry touches (catches thin features)
+WATERWAY_LINE_BUFFER_M = (
+    5.0  # buffer line geometries (narrow rivers) by this; 0 ignores lines
+)
+ALL_TOUCHED = True  # burn every pixel a geometry touches (catches thin features)
 
 
 # ============================================================
 # HELPERS
 # ============================================================
+
 
 def reference_grid(ref_path):
     """Read grid geometry (geotransform, projection, size, EPSG) from a raster."""
@@ -65,10 +76,13 @@ def reference_grid(ref_path):
     ds = None
 
     return {
-        "gt": gt, "proj": proj,
+        "gt": gt,
+        "proj": proj,
         "epsg": int(epsg) if epsg else None,
-        "width": w, "height": h,
-        "xres": gt[1], "yres": -gt[5],
+        "width": w,
+        "height": h,
+        "xres": gt[1],
+        "yres": -gt[5],
     }
 
 
@@ -82,7 +96,9 @@ def load_water_in_grid_crs(vec_path, layer, target_epsg, line_buffer_m):
 
     is_line = gdf.geometry.geom_type.isin(["LineString", "MultiLineString"])
     if is_line.any() and line_buffer_m and line_buffer_m > 0:
-        gdf.loc[is_line, "geometry"] = gdf.loc[is_line, "geometry"].buffer(line_buffer_m)
+        gdf.loc[is_line, "geometry"] = gdf.loc[is_line, "geometry"].buffer(
+            line_buffer_m
+        )
 
     gdf = gdf[gdf.geometry.notna() & ~gdf.geometry.is_empty].copy()
     if len(gdf) == 0:
@@ -92,10 +108,15 @@ def load_water_in_grid_crs(vec_path, layer, target_epsg, line_buffer_m):
 
 def rasterize_binary_to_tif(gdf, grid, out_path, all_touched):
     """Rasterize water geometries to a 0/1 GeoTIFF aligned to the reference grid."""
-    tmp = Path(tempfile.gettempdir()) / f"water_tmp_{abs(hash(str(gdf.total_bounds)))}.gpkg"
+    tmp = (
+        Path(tempfile.gettempdir())
+        / f"water_tmp_{abs(hash(str(gdf.total_bounds)))}.gpkg"
+    )
     gdf[["geometry"]].to_file(tmp, driver="GPKG")
 
-    mem = gdal.GetDriverByName("MEM").Create("", grid["width"], grid["height"], 1, gdal.GDT_Byte)
+    mem = gdal.GetDriverByName("MEM").Create(
+        "", grid["width"], grid["height"], 1, gdal.GDT_Byte
+    )
     mem.SetGeoTransform(grid["gt"])
     mem.SetProjection(grid["proj"])
     gdal.Rasterize(mem, str(tmp), burnValues=[1], allTouched=all_touched)
@@ -118,12 +139,17 @@ def rasterize_binary_to_tif(gdf, grid, out_path, all_touched):
 # MAIN
 # ============================================================
 
+
 def main():
     grid = reference_grid(REFERENCE_RASTER)
-    print(f"Reference grid: {grid['width']}x{grid['height']} px @ {grid['xres']:.1f} m, "
-          f"EPSG:{grid['epsg']}")
+    print(
+        f"Reference grid: {grid['width']}x{grid['height']} px @ {grid['xres']:.1f} m, "
+        f"EPSG:{grid['epsg']}"
+    )
 
-    gdf = load_water_in_grid_crs(WATER_VECTOR_PATH, WATER_LAYER, grid["epsg"], WATERWAY_LINE_BUFFER_M)
+    gdf = load_water_in_grid_crs(
+        WATER_VECTOR_PATH, WATER_LAYER, grid["epsg"], WATERWAY_LINE_BUFFER_M
+    )
     print(f"Water features: {len(gdf)}")
 
     arr = rasterize_binary_to_tif(gdf, grid, OUTPUT_WATER_TIF, ALL_TOUCHED)

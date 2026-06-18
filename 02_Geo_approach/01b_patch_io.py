@@ -19,6 +19,7 @@ import numpy as np
 from scipy.ndimage import uniform_filter
 
 from osgeo import gdal, gdalconst
+
 gdal.UseExceptions()
 
 
@@ -48,8 +49,12 @@ def read_window(ds, bbox, target_pixels, resample=gdalconst.GRA_Bilinear):
     raster_ysize = ds.RasterYSize
 
     # Fully outside the raster -> zeros
-    if (col_off >= raster_xsize or row_off >= raster_ysize
-            or col_off + col_size <= 0 or row_off + row_size <= 0):
+    if (
+        col_off >= raster_xsize
+        or row_off >= raster_ysize
+        or col_off + col_size <= 0
+        or row_off + row_size <= 0
+    ):
         return np.zeros((target_pixels, target_pixels), dtype=np.float32)
 
     read_col = max(0, col_off)
@@ -63,11 +68,19 @@ def read_window(ds, bbox, target_pixels, resample=gdalconst.GRA_Bilinear):
     band = ds.GetRasterBand(1)
 
     # Fully inside -> single resampled read
-    if (read_col == col_off and read_row == row_off
-            and read_col_size == col_size and read_row_size == row_size):
+    if (
+        read_col == col_off
+        and read_row == row_off
+        and read_col_size == col_size
+        and read_row_size == row_size
+    ):
         return band.ReadAsArray(
-            read_col, read_row, read_col_size, read_row_size,
-            buf_xsize=target_pixels, buf_ysize=target_pixels,
+            read_col,
+            read_row,
+            read_col_size,
+            read_row_size,
+            buf_xsize=target_pixels,
+            buf_ysize=target_pixels,
             resample_alg=resample,
         ).astype(np.float32)
 
@@ -78,21 +91,35 @@ def read_window(ds, bbox, target_pixels, resample=gdalconst.GRA_Bilinear):
         return np.zeros((target_pixels, target_pixels), dtype=np.float32)
 
     sub = band.ReadAsArray(
-        read_col, read_row, read_col_size, read_row_size,
-        buf_xsize=sub_target_w, buf_ysize=sub_target_h,
+        read_col,
+        read_row,
+        read_col_size,
+        read_row_size,
+        buf_xsize=sub_target_w,
+        buf_ysize=sub_target_h,
         resample_alg=resample,
     ).astype(np.float32)
 
     out = np.zeros((target_pixels, target_pixels), dtype=np.float32)
-    out_col_off = max(0, min(int(round(target_pixels * (read_col - col_off) / col_size)),
-                             target_pixels - 1))
-    out_row_off = max(0, min(int(round(target_pixels * (read_row - row_off) / row_size)),
-                             target_pixels - 1))
+    out_col_off = max(
+        0,
+        min(
+            int(round(target_pixels * (read_col - col_off) / col_size)),
+            target_pixels - 1,
+        ),
+    )
+    out_row_off = max(
+        0,
+        min(
+            int(round(target_pixels * (read_row - row_off) / row_size)),
+            target_pixels - 1,
+        ),
+    )
     # Clamp both destination slice and source so independent rounding can never
     # produce a shape mismatch for edge patches.
     h = min(sub_target_h, target_pixels - out_row_off)
     w = min(sub_target_w, target_pixels - out_col_off)
-    out[out_row_off:out_row_off + h, out_col_off:out_col_off + w] = sub[:h, :w]
+    out[out_row_off : out_row_off + h, out_col_off : out_col_off + w] = sub[:h, :w]
     return out
 
 
