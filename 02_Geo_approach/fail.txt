@@ -1,0 +1,9 @@
+  main()
+  File "D:\\90_PersonalFoldlers\\JZa\\DataProcessing\\_git\\hydro-ml\\02_Geo_approach\\04b_interference.py", line 937, in main
+    detected = probability_to_centerlines(prob_raster, corridor_mask, geotransform)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\\90_PersonalFoldlers\\JZa\\DataProcessing\\_git\\hydro-ml\\02_Geo_approach\\04b_interference.py", line 848, in probability_to_centerlines
+    comp_lines = extract_centerlines(comp_skeleton, geotransform, MIN_LINE_LENGTH_M)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\\90_PersonalFoldlers\\JZa\\DataProcessing\\_git\\hydro-ml\\02_Geo_approach\\04b_interference.py", line 768, in extract_centerlines
+    deg = {(r, c): int(deg_map[r, c]) for (r, c) in pts}
