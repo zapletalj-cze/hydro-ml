@@ -9,7 +9,7 @@ levee centerlines as a GPKG.
 Pipeline:
     1. Load AOI polygon and MERIT river corridor (intersect)
     2. Generate sliding-window patch grid over the corridor
-    3. Per patch: extract DSM + TPI + canopy + canopy SD + water, normalize, forward pass
+    3. Per patch: extract DSM + TPI + canopy + canopy SD + water, normalize, forward pass (optional TTA)
     4. Stitch patch predictions into a single probability raster
     5. Threshold + morphological cleanup -> connected components
     6. Per component: skeleton graph -> iterative longest-path extraction
@@ -24,7 +24,7 @@ Vectorization paradigm (differs from 04_inference.py):
 
 Author:   Jakub Zapletal
 Date:     2026-06-18
-Version:  0.4
+Version:  0.5
 """
 
 import warnings
@@ -60,10 +60,10 @@ from tqdm import tqdm
 
 # --- User-provided paths ---
 AOI_PATH = Path(
-    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\AOI_Poland_full.gpkg"
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\AOI_Poland.gpkg"
 )
 DSM_PATH = Path(
-    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\COP_DSM\COP_DSM_Poland_2180_c_10m.tif"
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\COP_DSM\COP_DSM_Poland_2180_c.tif"
 )
 CANOPY_PATH = Path(
     r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\data\CanopyHeight\Poland\reprojected\ETH_GlobalCanopyHeight_10m_2020_Poland_Map_2180.tif"
@@ -72,7 +72,7 @@ CANOPY_SD_PATH = Path(
     r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\data\CanopyHeight\Poland\reprojected\ETH_GlobalCanopyHeight_10m_2020_Poland_Map_SD_2180.tif"
 )
 WATER_PATH = Path(
-    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\water_mask\water_mask_pl.tif"
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\source\pl\water_mask_pl.tif"
 )
 
 MERIT_PATH = Path(
@@ -81,19 +81,20 @@ MERIT_PATH = Path(
 MERIT_UPAREA_COL = "uparea"
 
 CHECKPOINT_PATH = Path(
-    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer\training_v01\best_model.pt"
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer_7ch\best_model.pt"
 )
 NORM_STATS_PATH = Path(
-    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer\training_v01\norm_stats.json"
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer_7ch\norm_stats.json"
 )
 
 OUTPUT_GPKG = Path(
-    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer\training_v01\eval_PL_results\interference_outputs\detected_levees.gpkg"
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer_7ch\interference_outputs\detected_levees.gpkg"
 )
 
 # Probability raster output (intermediate result, used by ensemble script).
 # Derived from OUTPUT_GPKG path with _prob.tif suffix.
 OUTPUT_PROB_TIF = OUTPUT_GPKG.with_name(OUTPUT_GPKG.stem + "_prob.tif")
+OUTPUT_PATCH_GRID = OUTPUT_GPKG.with_name(OUTPUT_GPKG.stem + "_patch_grid.gpkg")
 
 # --- Geographic & raster constants (must match training) ---
 CRS_TARGET = 2180  # EPSG:2180 (PL-1992)
@@ -139,6 +140,19 @@ POSTPROCESS_BUFFER_M = 500
 # Geometry simplification (Douglas-Peucker tolerance, m). Removes pixel-staircase
 # vertices for cleaner, lighter lines. 0 disables.
 SIMPLIFY_TOLERANCE_M = 10
+
+# --- Test-time augmentation (TTA) ---
+# Average predictions over spatial transforms to stabilize the response and
+# recover borderline, orientation-sensitive detections.
+#   "d4"   - full dihedral group: 4 rotations x 2 mirrors = 8 passes (slower)
+#   "flip" - identity + horizontal + vertical + both = 4 passes
+USE_TTA = True
+TTA_MODE = "d4"
+
+# --- Diagnostics ---
+# Export the USED patch squares (those whose bbox intersected the corridor) as a
+# GPKG, to check whether detection gaps line up with the patch grid.
+EXPORT_PATCH_GRID = False
 
 
 # ============================================================
@@ -422,6 +436,42 @@ def normalize_patch(patch, norm_stats):
 # ============================================================
 
 
+def _tta_transforms(mode):
+    """
+    Return a list of (forward, inverse) tensor transforms for test-time
+    augmentation. Each is applied to the full (B, C, H, W) input; the model
+    output is mapped back to the original orientation before averaging.
+        "flip" - identity, horizontal, vertical, both (4)
+        "d4"   - full dihedral group, 4 rotations x 2 mirrors (8)
+    """
+    def rot(x, k):
+        return torch.rot90(x, k, dims=(2, 3))
+
+    def hflip(x):
+        return torch.flip(x, dims=(3,))
+
+    if mode == "flip":
+        return [
+            (lambda x: x, lambda y: y),
+            (hflip, hflip),
+            (lambda x: torch.flip(x, dims=(2,)), lambda y: torch.flip(y, dims=(2,))),
+            (lambda x: torch.flip(x, dims=(2, 3)), lambda y: torch.flip(y, dims=(2, 3))),
+        ]
+
+    transforms = []
+    for f in (False, True):
+        for k in (0, 1, 2, 3):
+            def fwd(x, f=f, k=k):
+                return rot(hflip(x) if f else x, k)
+
+            def inv(y, f=f, k=k):
+                yk = rot(y, -k)
+                return hflip(yk) if f else yk
+
+            transforms.append((fwd, inv))
+    return transforms
+
+
 def run_inference(model, centers, norm_stats):
     """
     Run batched inference. For each center, return (center, prediction_256x256).
@@ -436,6 +486,7 @@ def run_inference(model, centers, norm_stats):
 
     predictions = []
     n_centers = len(centers)
+    tta = _tta_transforms(TTA_MODE) if USE_TTA else [(lambda x: x, lambda y: y)]
 
     with torch.no_grad():
         for batch_start in tqdm(
@@ -452,8 +503,13 @@ def run_inference(model, centers, norm_stats):
                 patches.append(p)
 
             batch = torch.from_numpy(np.stack(patches, axis=0)).float().to(DEVICE)
-            logits = model(batch)
-            probs = torch.sigmoid(logits).cpu().numpy()[:, 0]  # (B, 256, 256)
+
+            prob_sum = None
+            for fwd, inv in tta:
+                logits = model(fwd(batch))
+                prob = inv(torch.sigmoid(logits))
+                prob_sum = prob if prob_sum is None else prob_sum + prob
+            probs = (prob_sum / len(tta)).cpu().numpy()[:, 0]  # (B, 256, 256)
 
             for (cx, cy), prob in zip(batch_centers, probs):
                 predictions.append((cx, cy, prob))
@@ -875,6 +931,26 @@ def probability_to_centerlines(prob_raster, corridor_mask, geotransform):
     return gdf
 
 
+def export_patch_grid(centers, output_path):
+    """Save the patch squares (PATCH_EXTENT_M boxes around each used center) as GPKG."""
+    squares = [
+        box(
+            cx - PATCH_EXTENT_M / 2,
+            cy - PATCH_EXTENT_M / 2,
+            cx + PATCH_EXTENT_M / 2,
+            cy + PATCH_EXTENT_M / 2,
+        )
+        for cx, cy in centers
+    ]
+    gdf = gpd.GeoDataFrame(
+        {"center_x": [c[0] for c in centers], "center_y": [c[1] for c in centers]},
+        geometry=squares,
+        crs=f"EPSG:{CRS_TARGET}",
+    )
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    gdf.to_file(output_path, driver="GPKG")
+
+
 def main():
     print(f"Device: {DEVICE}")
     print(f"Checkpoint: {CHECKPOINT_PATH}")
@@ -909,6 +985,10 @@ def main():
     print(f"  Total patches: {len(centers)}")
     if len(centers) == 0:
         raise RuntimeError("No patches generated — AOI / corridor empty?")
+
+    if EXPORT_PATCH_GRID:
+        print(f"Exporting patch grid to {OUTPUT_PATCH_GRID}...")
+        export_patch_grid(centers, OUTPUT_PATCH_GRID)
 
     # 5. Run inference
     print("Running inference...")
