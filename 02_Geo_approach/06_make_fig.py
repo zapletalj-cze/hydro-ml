@@ -48,7 +48,7 @@ import matplotlib.pyplot as plt
 
 TRAINING_HISTORY_CSV = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer\training_v01\training_history.csv")
 VAL_RESULTS_CSV      = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer\training_v01\val_results_per_patch.csv")
-TEST_RESULTS_CSV     = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer\training_v01\eval_basin_B\basin_B_results_per_patch.csv")
+TEST_RESULTS_CSV     = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer\training_v01\eval_PL_v01\basin_B_results_per_patch.csv")
 
 OUTPUT_DIR = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer\training_v01\thesis_figures")
 
