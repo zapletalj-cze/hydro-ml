@@ -24,7 +24,7 @@ Vectorization paradigm (differs from 04_inference.py):
 
 Author:   Jakub Zapletal
 Date:     2026-06-18
-Version:  0.5
+Version:  0.6
 """
 
 import warnings
@@ -800,10 +800,14 @@ def _path_to_linestring(path_nodes, geotransform):
     return LineString(coords)
 
 
-def extract_centerlines(component_skeleton, geotransform, min_length_m):
+def extract_centerlines(coords, deg_map, geotransform, min_length_m):
     """
-    Iterative longest-path extraction for one connected component's skeleton,
-    operating on the REDUCED graph (junctions/endpoints as nodes).
+    Iterative longest-path extraction for one connected component, given the
+    component's skeleton pixel COORDINATES and the GLOBAL degree map. A skeleton
+    pixel's 8-neighbours all lie in the same component, so the global degree
+    equals the component degree; this lets the caller skeletonize and label the
+    whole raster ONCE instead of re-skeletonizing the full array per component.
+    Operates on the REDUCED graph (junctions/endpoints as nodes).
 
     Repeatedly:
         1. take the longest path (diameter) of the current graph,
@@ -816,11 +820,10 @@ def extract_centerlines(component_skeleton, geotransform, min_length_m):
     """
     min_length_px = min_length_m / abs(geotransform[1])
 
-    pts = set(map(tuple, np.argwhere(component_skeleton).tolist()))
+    pts = set(map(tuple, coords.tolist()))
     if len(pts) < 2:
         return []
 
-    deg_map = _degree_map(component_skeleton)
     deg = {(r, c): int(deg_map[r, c]) for (r, c) in pts}
     nodes = {p for p in pts if deg[p] != 2}
 
@@ -868,7 +871,7 @@ def probability_to_centerlines(prob_raster, corridor_mask, geotransform):
 
     Chain:
         threshold -> (optional corridor mask) -> closing -> remove small blobs
-        -> per connected component: skeletonize -> longest-path extraction
+        -> skeletonize once -> per connected component: longest-path extraction
         -> simplify -> length filter
 
     Prints diagnostics so it is clear where geometry is gained or lost.
@@ -893,15 +896,28 @@ def probability_to_centerlines(prob_raster, corridor_mask, geotransform):
     if binary.sum() == 0:
         return gpd.GeoDataFrame({"length_m": []}, geometry=[], crs=f"EPSG:{CRS_TARGET}")
 
-    # Process each connected component independently
-    labels, n_comp = label_components(binary, connectivity=2, return_num=True)
+    # Skeletonize the whole mask ONCE, then split into components on the skeleton.
+    # Re-skeletonizing / masking the full-size array per component is O(n_comp x N)
+    # and is what made this step pathological on country-wide rasters.
+    skel = skeletonize(binary)
+    deg_map = _degree_map(skel)                       # global degree map, once
+    labels, n_comp = label_components(skel, connectivity=2, return_num=True)
     print(f"    connected components: {n_comp}")
 
+    coords_all = np.argwhere(skel)                    # all skeleton pixels, once
+    if coords_all.size == 0:
+        return gpd.GeoDataFrame({"length_m": []}, geometry=[], crs=f"EPSG:{CRS_TARGET}")
+    comp_ids = labels[coords_all[:, 0], coords_all[:, 1]]
+    order = np.argsort(comp_ids, kind="stable")
+    coords_all = coords_all[order]
+    comp_ids = comp_ids[order]
+    cut = np.flatnonzero(np.diff(comp_ids)) + 1
+    starts = np.concatenate(([0], cut))
+    ends = np.concatenate((cut, [len(comp_ids)]))
+
     all_lines = []
-    for comp_id in range(1, n_comp + 1):
-        comp_mask = labels == comp_id
-        comp_skeleton = skeletonize(comp_mask)
-        comp_lines = extract_centerlines(comp_skeleton, geotransform, MIN_LINE_LENGTH_M)
+    for s, e in tqdm(zip(starts, ends), total=len(starts), desc="Vectorizing components"):
+        comp_lines = extract_centerlines(coords_all[s:e], deg_map, geotransform, MIN_LINE_LENGTH_M)
         all_lines.extend(comp_lines)
 
     print(f"    extracted paths:      {len(all_lines)}")
