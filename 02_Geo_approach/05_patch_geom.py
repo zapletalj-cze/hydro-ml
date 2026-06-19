@@ -37,11 +37,11 @@ from shapely.geometry import box
 # Preferred: the split file written by training (has the 'split' column).
 # Fall back to a region patches_metadata.csv if the split file is absent.
 METADATA_CSV = Path(
-    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v03_segformer_v3_dsm_tpi_canopyheight\metadata_with_split.csv"
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer\training_v01\metadata_with_split.csv"
 )
 
 OUTPUT_GPKG = Path(
-    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\patch_footprints.gpkg"
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer\training_v01\patch_footprints.gpkg"
 )
 
 CRS_TARGET = 2180  # EPSG:2180 (PL-1992)

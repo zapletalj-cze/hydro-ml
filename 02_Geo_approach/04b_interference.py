@@ -60,10 +60,10 @@ from tqdm import tqdm
 
 # --- User-provided paths ---
 AOI_PATH = Path(
-    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\AOI_Poland.gpkg"
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\AOI_Poland_full.gpkg"
 )
 DSM_PATH = Path(
-    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\COP_DSM\COP_DSM_Poland_2180_c.tif"
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\COP_DSM\COP_DSM_Poland_2180_c_10m.tif"
 )
 CANOPY_PATH = Path(
     r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\data\CanopyHeight\Poland\reprojected\ETH_GlobalCanopyHeight_10m_2020_Poland_Map_2180.tif"
@@ -72,7 +72,7 @@ CANOPY_SD_PATH = Path(
     r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\data\CanopyHeight\Poland\reprojected\ETH_GlobalCanopyHeight_10m_2020_Poland_Map_SD_2180.tif"
 )
 WATER_PATH = Path(
-    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\source\pl\water_mask_pl.tif"
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\water_mask\water_mask_pl.tif"
 )
 
 MERIT_PATH = Path(
@@ -81,14 +81,14 @@ MERIT_PATH = Path(
 MERIT_UPAREA_COL = "uparea"
 
 CHECKPOINT_PATH = Path(
-    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer_7ch\best_model.pt"
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer\training_v01\best_model.pt"
 )
 NORM_STATS_PATH = Path(
-    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer_7ch\norm_stats.json"
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer\training_v01\norm_stats.json"
 )
 
 OUTPUT_GPKG = Path(
-    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer_7ch\interference_outputs\detected_levees.gpkg"
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer\training_v01\eval_PL_results\interference_outputs\detected_levees.gpkg"
 )
 
 # Probability raster output (intermediate result, used by ensemble script).
