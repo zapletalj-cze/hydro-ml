@@ -9,7 +9,7 @@ levee centerlines as a GPKG.
 Pipeline:
     1. Load AOI polygon and MERIT river corridor (intersect)
     2. Generate sliding-window patch grid over the corridor
-    3. Per patch: extract DSM + TPI + canopy + canopy SD, normalize, forward pass
+    3. Per patch: extract DSM + TPI + canopy + canopy SD + water, normalize, forward pass
     4. Stitch patch predictions into a single probability raster
     5. Threshold + morphological cleanup -> connected components
     6. Per component: skeleton graph -> iterative longest-path extraction
@@ -23,8 +23,8 @@ Vectorization paradigm (differs from 04_inference.py):
     not edges between junctions, so a continuous levee stays continuous.
 
 Author:   Jakub Zapletal
-Date:     2026-06-15
-Version:  0.3
+Date:     2026-06-18
+Version:  0.4
 """
 
 import warnings
@@ -71,20 +71,24 @@ CANOPY_PATH = Path(
 CANOPY_SD_PATH = Path(
     r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\data\CanopyHeight\Poland\reprojected\ETH_GlobalCanopyHeight_10m_2020_Poland_Map_SD_2180.tif"
 )
+WATER_PATH = Path(
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\source\pl\water_mask_pl.tif"
+)
+
 MERIT_PATH = Path(
     r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\data\riv_pfaf_2x_MERIT_Hydro_v07_Basin_flip_2180.gpkg"
 )
 MERIT_UPAREA_COL = "uparea"
 
 CHECKPOINT_PATH = Path(
-    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v03_segformer_v3_dsm_tpi_canopyheight\best_model.pt"
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer_7ch\best_model.pt"
 )
 NORM_STATS_PATH = Path(
-    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v03_segformer_v3_dsm_tpi_canopyheight\norm_stats.json"
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer_7ch\norm_stats.json"
 )
 
 OUTPUT_GPKG = Path(
-    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v03_segformer_v3_dsm_tpi_canopyheight\interference_outputs\detected_levees.gpkg"
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer_7ch\interference_outputs\detected_levees.gpkg"
 )
 
 # Probability raster output (intermediate result, used by ensemble script).
@@ -111,11 +115,11 @@ STITCH_METHOD = "feather"
 
 TPI_RADII_PX = [5, 10, 15]  # 50, 100, 150 m on 10 m grid
 RIVER_BUFFER_M = 500
-MIN_UPAREA_KM2 = 10
+MIN_UPAREA_KM2 = 2000  # match training corridor (large rivers only)
 
 # --- Model / inference constants ---
 SEGFORMER_BACKBONE = "mit_b2"
-N_INPUT_CHANNELS = 6
+N_INPUT_CHANNELS = 7
 INFERENCE_BATCH = 16
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -170,7 +174,7 @@ def adapt_first_conv_segformer(model, n_input_channels):
 
 
 def build_and_load_model():
-    """Build SegFormer with 6-channel input, load checkpoint."""
+    """Build SegFormer with 7-channel input, load checkpoint."""
     model = smp.Segformer(
         encoder_name=SEGFORMER_BACKBONE,
         encoder_weights=None,  # weights come from checkpoint
@@ -339,12 +343,11 @@ def read_window(ds, bbox, target_pixels, resample=gdalconst.GRA_Bilinear):
     ).astype(np.float32)
 
     out = np.zeros((target_pixels, target_pixels), dtype=np.float32)
-    out_col_off = int(round(target_pixels * (read_col - col_off) / col_size))
-    out_row_off = int(round(target_pixels * (read_row - row_off) / row_size))
-    out[
-        out_row_off : out_row_off + sub_target_h,
-        out_col_off : out_col_off + sub_target_w,
-    ] = sub
+    out_col_off = max(0, min(int(round(target_pixels * (read_col - col_off) / col_size)), target_pixels - 1))
+    out_row_off = max(0, min(int(round(target_pixels * (read_row - row_off) / row_size)), target_pixels - 1))
+    h = min(sub_target_h, target_pixels - out_row_off)
+    w = min(sub_target_w, target_pixels - out_col_off)
+    out[out_row_off : out_row_off + h, out_col_off : out_col_off + w] = sub[:h, :w]
     return out
 
 
@@ -356,13 +359,14 @@ def read_window(ds, bbox, target_pixels, resample=gdalconst.GRA_Bilinear):
 def compute_tpi(z, radius_px):
     """TPI = z minus mean of NxN neighborhood. Matches training pipeline."""
     size = 2 * radius_px + 1
-    return z - uniform_filter(z, size=size, mode="nearest")  # match patch generator
+    return (z - uniform_filter(z, size=size, mode="reflect")).astype(np.float32)  # match patch_io
 
 
-def extract_patch(center_x, center_y, dsm_ds, canopy_ds, canopy_sd_ds):
+def extract_patch(center_x, center_y, dsm_ds, canopy_ds, canopy_sd_ds, water_ds):
     """
-    Extract a 6-channel patch (256x256) at given center coordinates.
-    Returns float32 array (6, 256, 256): DSM, TPI x3, Canopy, Canopy SD.
+    Extract a 7-channel patch (256x256) at given center coordinates.
+    Returns float32 array (7, 256, 256):
+        DSM, TPI x3, Canopy, Canopy SD, binary water mask.
     """
     bbox = (
         center_x - PATCH_EXTENT_M / 2,
@@ -374,22 +378,26 @@ def extract_patch(center_x, center_y, dsm_ds, canopy_ds, canopy_sd_ds):
     dsm = read_window(dsm_ds, bbox, PATCH_SIZE_PX, gdalconst.GRA_Bilinear)
     canopy = read_window(canopy_ds, bbox, PATCH_SIZE_PX, gdalconst.GRA_Bilinear)
     canopy_sd = read_window(canopy_sd_ds, bbox, PATCH_SIZE_PX, gdalconst.GRA_Bilinear)
+    # Water mask is categorical: nearest-neighbour, then enforce strict 0/1.
+    water = read_window(water_ds, bbox, PATCH_SIZE_PX, gdalconst.GRA_NearestNeighbour)
+    water = (water > 0.5).astype(np.float32)
 
     tpi_channels = [compute_tpi(dsm, r) for r in TPI_RADII_PX]
 
-    patch = np.stack([dsm, *tpi_channels, canopy, canopy_sd], axis=0)
+    patch = np.stack([dsm, *tpi_channels, canopy, canopy_sd, water], axis=0)
     return patch
 
 
 def normalize_patch(patch, norm_stats):
     """
-    Normalize 6-channel patch.
-        DSM: per-patch median subtraction (generalization across regions)
+    Normalize 7-channel patch, matching training:
+        DSM: per-patch median subtraction
         TPI / canopy / canopy_sd: per-channel z-score from training stats
+        water: binary mask, left as 0/1 (not normalized)
     """
     out = patch.copy()
 
-    # Channel 0: DSM — per-patch median
+    # Channel 0: DSM, per-patch median
     out[0] = out[0] - np.median(out[0])
 
     # Channels 1..5: per-channel z-score
@@ -405,6 +413,7 @@ def normalize_patch(patch, norm_stats):
         std = norm_stats[name]["std"]
         out[i] = (out[i] - mean) / (std + 1e-8)
 
+    # Channel 6: water, kept binary (no normalization)
     return out
 
 
@@ -420,8 +429,9 @@ def run_inference(model, centers, norm_stats):
     dsm_ds = gdal.Open(str(DSM_PATH))
     canopy_ds = gdal.Open(str(CANOPY_PATH))
     canopy_sd_ds = gdal.Open(str(CANOPY_SD_PATH))
+    water_ds = gdal.Open(str(WATER_PATH))
 
-    if dsm_ds is None or canopy_ds is None or canopy_sd_ds is None:
+    if dsm_ds is None or canopy_ds is None or canopy_sd_ds is None or water_ds is None:
         raise RuntimeError("Failed to open one or more raster sources")
 
     predictions = []
@@ -437,7 +447,7 @@ def run_inference(model, centers, norm_stats):
 
             patches = []
             for cx, cy in batch_centers:
-                p = extract_patch(cx, cy, dsm_ds, canopy_ds, canopy_sd_ds)
+                p = extract_patch(cx, cy, dsm_ds, canopy_ds, canopy_sd_ds, water_ds)
                 p = normalize_patch(p, norm_stats)
                 patches.append(p)
 
@@ -451,6 +461,7 @@ def run_inference(model, centers, norm_stats):
     dsm_ds = None
     canopy_ds = None
     canopy_sd_ds = None
+    water_ds = None
 
     return predictions
 
