@@ -45,8 +45,8 @@ from matplotlib.patches import Patch
 
 TRAINING_HISTORY_CSV = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer\training_v01\training_history.csv")
 BASIN_B_CSV          = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer\training_v01\eval_basin_B\basin_B_results_per_patch.csv")
-VAL_A_CSV            = Path("D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer\training_v01\val_results_per_patch.csv")    
-ABLATION_OVERALL_CSV = Path("comparison_overall.csv")        # optional
+VAL_A_CSV            = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer\training_v01\val_results_per_patch.csv")    
+ABLATION_OVERALL_CSV = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v03_comparison\comparison_overall.csv")        # optional
 
 OUTPUT_DIR = Path("slide_figures")
 
@@ -203,12 +203,12 @@ def figure_basin_b_headline(df_b, out_dir):
     bars = ax.bar(names, values, color=colors, width=0.62, edgecolor="white", linewidth=0.5)
     ax.set_ylim(0, 1)
     ax.set_ylabel("Hodnota")
-    ax.set_title("Metriky na nezávislém testovacím povodí (Odra, pozitivní patche)")
+    ax.set_title("Metriky na nezávislém testovacím povodí (Odra)")
     ax.grid(axis="x", visible=False)
     for b, v in zip(bars, values):
         ax.text(b.get_x() + b.get_width() / 2, v + 0.02, f"{v:.2f}",
                 ha="center", va="bottom", fontsize=10, color=INK)
-    fig.text(0.012, 0.015, "Precision, Recall, IoU a Dice mikro-průměrované ze sečtených TP/FP/FN. clDice je průměr po patchích.",
+    fig.text(0.012, 0.015, "Precision, Recall, IoU a Dice průměrované ze sečtených TP/FP/FN. clDice je průměr po patchích.",
              fontsize=7.5, color=MUTED)
     fig.tight_layout(rect=[0, 0.03, 1, 1])
     save_fig(fig, out_dir / "fig_basin_B_headline.png")

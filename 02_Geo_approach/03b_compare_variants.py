@@ -65,7 +65,7 @@ OUTPUT_DIR = Path(
 # Optional manual overrides of best epoch used for training-curve plotting.
 # Useful when you want to lock a specific stopping point for a variant.
 FORCED_BEST_EPOCH = {
-    "v3 (DSM+TPI+aux)": 86,
+    "v3 (DSM+TPI+aux)": 100,
 }
 
 
