@@ -44,11 +44,11 @@ import segmentation_models_pytorch as smp
 
 # ------- Paths ----------------------------------------------
 # Training run that produced best_model.pt + norm_stats.json
-TRAIN_OUTPUT_DIR = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer_7ch")
+TRAIN_OUTPUT_DIR = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer\training_v01")
 
 # Held-out basin (basin B) to evaluate on
-TEST_PATCHES_DIR  = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\patches_test_B\patches")
-TEST_METADATA_CSV = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\patches_test_B\patches_metadata.csv")
+TEST_PATCHES_DIR  = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer\patches_PL_test\patches")
+TEST_METADATA_CSV = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer\patches_PL_test\patches_metadata.csv")
 
 # Where to write evaluation outputs
 EVAL_OUTPUT_DIR = TRAIN_OUTPUT_DIR / "eval_basin_B"
