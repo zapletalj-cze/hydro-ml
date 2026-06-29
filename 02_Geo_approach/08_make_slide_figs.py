@@ -43,9 +43,9 @@ from matplotlib.patches import Patch
 # CONFIG  -- edit these paths to your run
 # ============================================================
 
-TRAINING_HISTORY_CSV = Path("training_history.csv")
-BASIN_B_CSV          = Path("basin_B_results_per_patch.csv")
-VAL_A_CSV            = Path("val_results_per_patch.csv")     # optional
+TRAINING_HISTORY_CSV = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer\training_v01\training_history.csv")
+BASIN_B_CSV          = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer\training_v01\eval_basin_B\basin_B_results_per_patch.csv")
+VAL_A_CSV            = Path("D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer\training_v01\val_results_per_patch.csv")    
 ABLATION_OVERALL_CSV = Path("comparison_overall.csv")        # optional
 
 OUTPUT_DIR = Path("slide_figures")
@@ -191,14 +191,13 @@ def figure_basin_b_headline(df_b, out_dir):
     eps = 1e-9
     precision = tp / (tp + fp + eps)
     recall    = tp / (tp + fn + eps)
-    f1        = 2 * precision * recall / (precision + recall + eps)
     iou       = tp / (tp + fp + fn + eps)
     dice      = 2 * tp / (2 * tp + fp + fn + eps)
     cldice    = float(pos["cldice"].mean())  # clDice has no additive counts; mean per patch
 
-    names  = ["Precision", "Recall", "F1", "IoU", "Dice", "clDice"]
-    values = [precision, recall, f1, iou, dice, cldice]
-    colors = [MUTED, MUTED, TEAL, IOU_C, DICE_C, CLD_C]
+    names  = ["Precision", "Recall", "IoU", "Dice", "clDice"]
+    values = [precision, recall, iou, dice, cldice]
+    colors = [MUTED, MUTED, IOU_C, DICE_C, CLD_C]
 
     fig, ax = plt.subplots(figsize=(8.4, 3.4))
     bars = ax.bar(names, values, color=colors, width=0.62, edgecolor="white", linewidth=0.5)
@@ -209,7 +208,7 @@ def figure_basin_b_headline(df_b, out_dir):
     for b, v in zip(bars, values):
         ax.text(b.get_x() + b.get_width() / 2, v + 0.02, f"{v:.2f}",
                 ha="center", va="bottom", fontsize=10, color=INK)
-    fig.text(0.012, 0.015, "Precision, Recall, F1, IoU a Dice mikro-průměrované ze sečtených TP/FP/FN. clDice je průměr po patchích.",
+    fig.text(0.012, 0.015, "Precision, Recall, IoU a Dice mikro-průměrované ze sečtených TP/FP/FN. clDice je průměr po patchích.",
              fontsize=7.5, color=MUTED)
     fig.tight_layout(rect=[0, 0.03, 1, 1])
     save_fig(fig, out_dir / "fig_basin_B_headline.png")
@@ -278,8 +277,11 @@ def figure_ablation(df_overall, out_dir):
         return
     metric_cols = [("test_mean_dice", "Dice", DICE_C),
                    ("test_mean_iou", "IoU", IOU_C),
-                   ("test_mean_cldice", "clDice", CLD_C),
-                   ("test_mean_f1", "F1", TEAL)]
+                   ("test_mean_cldice", "clDice", CLD_C)]
+
+    # F1 and Dice are equivalent for binary segmentation; only include F1 if Dice is unavailable.
+    if "test_mean_dice" not in df_overall.columns and "test_mean_f1" in df_overall.columns:
+        metric_cols.insert(0, ("test_mean_f1", "Dice/F1", DICE_C))
     present = [(col, lbl, c) for col, lbl, c in metric_cols if col in df_overall.columns]
     if not present:
         print("  [skip] ablation: no test_mean_* columns found")

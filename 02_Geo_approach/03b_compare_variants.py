@@ -62,6 +62,12 @@ OUTPUT_DIR = Path(
     r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v03_comparison"
 )
 
+# Optional manual overrides of best epoch used for training-curve plotting.
+# Useful when you want to lock a specific stopping point for a variant.
+FORCED_BEST_EPOCH = {
+    "v3 (DSM+TPI+aux)": 86,
+}
+
 
 # ============================================================
 # LOAD RUN ARTIFACTS
@@ -265,16 +271,87 @@ def build_breakdown_table(runs, group_cols):
 
 
 def plot_training_curves_overlay(runs, output_path):
-    """Overlay val_score / val_dice / val_cldice curves across variants."""
+    """Overlay val_* curves and optional dashed train_* curves across variants."""
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+    max_plot_epoch = 100
 
     for variant_name, run in runs.items():
-        h = run["history"]
+        h = run["history"].copy()
+
+        # Coerce to numeric to avoid category-like plotting and hidden trailing rows.
+        h["epoch"] = pd.to_numeric(h["epoch"], errors="coerce")
         if "val_score" in h.columns:
-            axes[0].plot(h["epoch"], h["val_score"], linewidth=2, label=variant_name)
-        axes[1].plot(h["epoch"], h["val_dice"], linewidth=2, label=variant_name)
+            h["val_score"] = pd.to_numeric(h["val_score"], errors="coerce")
+        if "val_dice" in h.columns:
+            h["val_dice"] = pd.to_numeric(h["val_dice"], errors="coerce")
         if "val_cldice" in h.columns:
-            axes[2].plot(h["epoch"], h["val_cldice"], linewidth=2, label=variant_name)
+            h["val_cldice"] = pd.to_numeric(h["val_cldice"], errors="coerce")
+        if "train_score" in h.columns:
+            h["train_score"] = pd.to_numeric(h["train_score"], errors="coerce")
+        if "train_dice" in h.columns:
+            h["train_dice"] = pd.to_numeric(h["train_dice"], errors="coerce")
+        if "train_cldice" in h.columns:
+            h["train_cldice"] = pd.to_numeric(h["train_cldice"], errors="coerce")
+
+        if "train_score" not in h.columns and {"train_dice", "train_cldice"}.issubset(h.columns):
+            h["train_score"] = (h["train_dice"] + h["train_cldice"]) / 2.0
+
+        h = h.dropna(subset=["epoch"]).sort_values("epoch")
+
+        variant_best_epoch = run.get("best_epoch", max_plot_epoch)
+        variant_best_epoch = int(FORCED_BEST_EPOCH.get(variant_name, variant_best_epoch))
+        variant_max_epoch = min(max_plot_epoch, variant_best_epoch)
+
+        h = h[h["epoch"] <= variant_max_epoch]
+        if len(h) == 0:
+            continue
+
+        max_epoch = int(h["epoch"].max())
+        print(
+            f"  {variant_name}: plotting through epoch {max_epoch} "
+            f"(best={variant_best_epoch}, cap={max_plot_epoch})"
+        )
+
+        if "val_score" in h.columns:
+            hs = h.dropna(subset=["val_score"])
+            if len(hs):
+                line_val_score = axes[0].plot(
+                    hs["epoch"], hs["val_score"], linewidth=2, label=f"{variant_name} val"
+                )[0]
+                if "train_score" in h.columns:
+                    hst = h.dropna(subset=["train_score"])
+                    if len(hst):
+                        axes[0].plot(
+                            hst["epoch"], hst["train_score"], linewidth=1.7, linestyle="--",
+                            color=line_val_score.get_color(), alpha=0.95, label=f"{variant_name} train"
+                        )
+
+        hd = h.dropna(subset=["val_dice"])
+        if len(hd):
+            line_val_dice = axes[1].plot(
+                hd["epoch"], hd["val_dice"], linewidth=2, label=f"{variant_name} val"
+            )[0]
+            if "train_dice" in h.columns:
+                hdt = h.dropna(subset=["train_dice"])
+                if len(hdt):
+                    axes[1].plot(
+                        hdt["epoch"], hdt["train_dice"], linewidth=1.7, linestyle="--",
+                        color=line_val_dice.get_color(), alpha=0.95, label=f"{variant_name} train"
+                    )
+
+        if "val_cldice" in h.columns:
+            hc = h.dropna(subset=["val_cldice"])
+            if len(hc):
+                line_val_cld = axes[2].plot(
+                    hc["epoch"], hc["val_cldice"], linewidth=2, label=f"{variant_name} val"
+                )[0]
+                if "train_cldice" in h.columns:
+                    hct = h.dropna(subset=["train_cldice"])
+                    if len(hct):
+                        axes[2].plot(
+                            hct["epoch"], hct["train_cldice"], linewidth=1.7, linestyle="--",
+                            color=line_val_cld.get_color(), alpha=0.95, label=f"{variant_name} train"
+                        )
 
     axes[0].set_xlabel("Epoch")
     axes[0].set_ylabel("Val Score")
@@ -293,6 +370,9 @@ def plot_training_curves_overlay(runs, output_path):
     axes[2].set_title("Val clDice")
     axes[2].legend()
     axes[2].grid(True, alpha=0.3)
+
+    for ax in axes:
+        ax.set_xlim(1, max_plot_epoch)
 
     plt.tight_layout()
     plt.savefig(output_path, dpi=120, bbox_inches="tight")
@@ -333,6 +413,150 @@ def plot_final_metrics_bar(df_overall, output_path):
 
     plt.tight_layout()
     plt.savefig(output_path, dpi=120, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {output_path}")
+
+
+def plot_overall_summary_dashboard(df_overall, output_path):
+    """Three-panel summary: mean metrics, micro metrics, and relative improvements."""
+    if len(df_overall) == 0:
+        print(f"No rows in overall table, skipping {output_path}")
+        return
+
+    variants = df_overall["variant"].tolist()
+    n_variants = len(variants)
+
+    mean_metrics = [
+        ("test_mean_dice", "Dice"),
+        ("test_mean_iou", "IoU"),
+        ("test_mean_cldice", "clDice"),
+        ("test_mean_f1", "F1"),
+    ]
+    micro_metrics = [
+        ("test_micro_dice", "Dice"),
+        ("test_micro_iou", "IoU"),
+        ("test_micro_precision", "Precision"),
+        ("test_micro_recall", "Recall"),
+    ]
+
+    mean_present = [(c, l) for c, l in mean_metrics if c in df_overall.columns]
+    micro_present = [(c, l) for c, l in micro_metrics if c in df_overall.columns]
+    if not mean_present or not micro_present:
+        print(f"Missing required columns for summary dashboard, skipping {output_path}")
+        return
+
+    fig, axes = plt.subplots(1, 3, figsize=(17, 5.2))
+
+    # Panel 1: mean per-patch metrics
+    ax = axes[0]
+    x = np.arange(len(mean_present))
+    bw = 0.8 / max(n_variants, 1)
+    palette = ["#1F4E79", "#0E7C7B", "#C2410C", "#7C3AED", "#64748B", "#2B6CB0"]
+    for i, (_, row) in enumerate(df_overall.iterrows()):
+        vals = [float(row[col]) for col, _ in mean_present]
+        off = (i - n_variants / 2 + 0.5) * bw
+        bars = ax.bar(
+            x + off,
+            vals,
+            bw,
+            label=row["variant"],
+            color=palette[i % len(palette)],
+            edgecolor="white",
+            linewidth=0.5,
+        )
+        for b, v in zip(bars, vals):
+            ax.text(
+                b.get_x() + b.get_width() / 2,
+                v + 0.012,
+                f"{v:.2f}",
+                ha="center",
+                va="bottom",
+                fontsize=8,
+            )
+    ax.set_xticks(x)
+    ax.set_xticklabels([lbl for _, lbl in mean_present])
+    ax.set_ylim(0, 1)
+    ax.set_ylabel("Score")
+    ax.set_title("Mean per-patch")
+    ax.grid(True, axis="y", alpha=0.3)
+
+    # Panel 2: micro-averaged metrics
+    ax = axes[1]
+    x = np.arange(len(micro_present))
+    for i, (_, row) in enumerate(df_overall.iterrows()):
+        vals = [float(row[col]) for col, _ in micro_present]
+        off = (i - n_variants / 2 + 0.5) * bw
+        bars = ax.bar(
+            x + off,
+            vals,
+            bw,
+            label=row["variant"],
+            color=palette[i % len(palette)],
+            edgecolor="white",
+            linewidth=0.5,
+        )
+        for b, v in zip(bars, vals):
+            ax.text(
+                b.get_x() + b.get_width() / 2,
+                v + 0.012,
+                f"{v:.2f}",
+                ha="center",
+                va="bottom",
+                fontsize=8,
+            )
+    ax.set_xticks(x)
+    ax.set_xticklabels([lbl for _, lbl in micro_present])
+    ax.set_ylim(0, 1)
+    ax.set_ylabel("Score")
+    ax.set_title("Micro-averaged")
+    ax.grid(True, axis="y", alpha=0.3)
+
+    # Panel 3: relative improvement vs baseline for key mean metrics
+    ax = axes[2]
+    if n_variants <= 1:
+        ax.text(0.5, 0.5, "Need >=2 variants", ha="center", va="center")
+        ax.set_axis_off()
+    else:
+        baseline = df_overall.iloc[0]
+        key_metrics = [
+            ("test_mean_dice", "Dice"),
+            ("test_mean_cldice", "clDice"),
+            ("test_mean_iou", "IoU"),
+            ("test_mean_f1", "F1"),
+        ]
+        key_metrics = [(c, l) for c, l in key_metrics if c in df_overall.columns]
+        labels = []
+        values = []
+        for i in range(1, len(df_overall)):
+            row = df_overall.iloc[i]
+            for col, lbl in key_metrics:
+                base = float(baseline[col])
+                val = float(row[col])
+                rel = (val - base) / max(abs(base), 1e-6) * 100.0
+                labels.append(f"{row['variant']} - {lbl}")
+                values.append(rel)
+
+        y = np.arange(len(labels))
+        bar_colors = ["#0E7C7B" if v >= 0 else "#C2410C" for v in values]
+        bars = ax.barh(y, values, color=bar_colors, alpha=0.9)
+        ax.axvline(0, color="#64748B", linewidth=1.0)
+        ax.set_yticks(y)
+        ax.set_yticklabels(labels, fontsize=8)
+        ax.set_xlabel("Relative improvement [%]")
+        ax.set_title(f"Improvement vs baseline ({baseline['variant']})")
+        ax.grid(True, axis="x", alpha=0.3)
+        for b, v in zip(bars, values):
+            x_txt = v + (1.0 if v >= 0 else -1.0)
+            ha = "left" if v >= 0 else "right"
+            ax.text(x_txt, b.get_y() + b.get_height() / 2, f"{v:+.1f}%", va="center", ha=ha, fontsize=8)
+
+    handles, labels = axes[0].get_legend_handles_labels()
+    if handles:
+        fig.legend(handles, labels, ncol=min(len(labels), 3), loc="upper center", frameon=False, bbox_to_anchor=(0.5, 1.02))
+
+    fig.suptitle("Model comparison summary", y=1.06)
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=140, bbox_inches="tight")
     plt.close(fig)
     print(f"Saved {output_path}")
 
@@ -564,6 +788,7 @@ def main():
     print("\nGenerating plots...")
     plot_training_curves_overlay(runs, OUTPUT_DIR / "comparison_training_curves.png")
     plot_final_metrics_bar(df_overall, OUTPUT_DIR / "comparison_final_metrics.png")
+    plot_overall_summary_dashboard(df_overall, OUTPUT_DIR / "comparison_summary_dashboard.png")
     plot_breakdown_by_category(df_by_cat, OUTPUT_DIR / "comparison_by_category.png")
     plot_distributions_comparison(runs, OUTPUT_DIR / "comparison_distributions.png")
 
