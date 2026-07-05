@@ -45,7 +45,7 @@ import segmentation_models_pytorch as smp
 
 # ------- Paths ----------------------------------------------
 # Training run that produced best_model.pt + norm_stats.json
-TRAIN_OUTPUT_DIR = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\training_v05_unet_resnet")
+TRAIN_OUTPUT_DIR = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\training_v05_segformer")
 
 # Held-out basin (basin B) to evaluate on
 TEST_PATCHES_DIR  = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\patches\patches_PL_test\patches")
@@ -79,7 +79,7 @@ SAVE_PREDICTIONS = True
 
 
 # ------- Architecture (must match training) ------------------
-ARCHITECTURE = "resnet_unet"  # "resnet_unet", "segformer", "deeplabv3plus"
+ARCHITECTURE = "segformer"  # "resnet_unet", "segformer", "deeplabv3plus"
 
 RESNET_BACKBONE     = "resnet34"
 SEGFORMER_BACKBONE  = "mit_b2"
@@ -281,25 +281,38 @@ def build_model():
     return model
 
 
-def load_state_dict_compat(model, state_dict):
-    """Load weights, bridging smp version differences in the Unet decoder.
+# smp introduced an extra Sequential nesting level in some decoder blocks
+# between versions. Each rule strips that redundant ".0" so old checkpoints load.
+_KEY_REMAP_RULES = (
+    # Unet decoder Conv2dReLU: blocks.N.conv2.0.<i>.<rest> -> blocks.N.conv2.<i>.<rest>
+    (re.compile(r"(decoder\.blocks\.\d+\.conv2)\.0\.(\d+)\.(.+)"), r"\1.\2.\3"),
+    # DeepLabV3+ SeparableConv block: block2.0.<rest> -> block2.<rest>
+    (re.compile(r"(decoder\.block2)\.0\.(.+)"), r"\1.\2"),
+)
 
-    Older/newer smp versions nest the decoder ``conv2`` block differently:
-        saved:   decoder.blocks.N.conv2.0.0.weight  (Conv2dReLU wraps a Sequential)
-        current: decoder.blocks.N.conv2.0.weight
-    Remap the extra ``.0`` level so the keys line up before loading.
+
+def _remap_state_dict_key(key):
+    for pattern, repl in _KEY_REMAP_RULES:
+        if pattern.match(key):
+            return pattern.sub(repl, key)
+    return key
+
+
+def load_state_dict_compat(model, state_dict):
+    """Load weights, bridging smp version differences in the decoder structure.
+
+    Older/newer smp versions add an extra ``Sequential`` nesting level in the
+    Unet (``conv2``) and DeepLabV3+ (``block2``) decoders. This remaps the saved
+    keys to the current module layout before loading. Note the DeepLab case also
+    resolves a shape collision where the checkpoint's ``block2.0.1.weight``
+    (BatchNorm) shares a name with the current model's pointwise conv.
     """
     model_keys = set(model.state_dict().keys())
     if all(k in model_keys for k in state_dict):
         model.load_state_dict(state_dict)
         return
 
-    pattern = re.compile(r"(decoder\.blocks\.\d+\.conv2)\.0\.(\d+)\.(.+)")
-    remapped = {}
-    for k, v in state_dict.items():
-        m = pattern.match(k)
-        new_key = f"{m.group(1)}.{m.group(2)}.{m.group(3)}" if m else k
-        remapped[new_key] = v
+    remapped = {_remap_state_dict_key(k): v for k, v in state_dict.items()}
 
     missing, unexpected = model.load_state_dict(remapped, strict=False)
     # num_batches_tracked buffers are safe to ignore if absent.
