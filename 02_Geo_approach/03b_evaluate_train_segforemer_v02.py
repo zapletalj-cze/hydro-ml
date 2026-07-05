@@ -25,6 +25,7 @@ warnings.filterwarnings("ignore")
 import json
 import logging
 import random
+import re
 import sys
 from pathlib import Path
 
@@ -44,11 +45,11 @@ import segmentation_models_pytorch as smp
 
 # ------- Paths ----------------------------------------------
 # Training run that produced best_model.pt + norm_stats.json
-TRAIN_OUTPUT_DIR = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer\training_v01")
+TRAIN_OUTPUT_DIR = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\training_v05_unet_resnet")
 
 # Held-out basin (basin B) to evaluate on
-TEST_PATCHES_DIR  = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer\patches_PL_test\patches")
-TEST_METADATA_CSV = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer\patches_PL_test\patches_metadata.csv")
+TEST_PATCHES_DIR  = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\patches\patches_PL_test\patches")
+TEST_METADATA_CSV = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\patches\patches_PL_test\patches_metadata.csv")
 
 # Where to write evaluation outputs
 EVAL_OUTPUT_DIR = TRAIN_OUTPUT_DIR / "eval_basin_B"
@@ -78,7 +79,7 @@ SAVE_PREDICTIONS = True
 
 
 # ------- Architecture (must match training) ------------------
-ARCHITECTURE = "segformer"
+ARCHITECTURE = "resnet_unet"  # "resnet_unet", "segformer", "deeplabv3plus"
 
 RESNET_BACKBONE     = "resnet34"
 SEGFORMER_BACKBONE  = "mit_b2"
@@ -280,6 +281,35 @@ def build_model():
     return model
 
 
+def load_state_dict_compat(model, state_dict):
+    """Load weights, bridging smp version differences in the Unet decoder.
+
+    Older/newer smp versions nest the decoder ``conv2`` block differently:
+        saved:   decoder.blocks.N.conv2.0.0.weight  (Conv2dReLU wraps a Sequential)
+        current: decoder.blocks.N.conv2.0.weight
+    Remap the extra ``.0`` level so the keys line up before loading.
+    """
+    model_keys = set(model.state_dict().keys())
+    if all(k in model_keys for k in state_dict):
+        model.load_state_dict(state_dict)
+        return
+
+    pattern = re.compile(r"(decoder\.blocks\.\d+\.conv2)\.0\.(\d+)\.(.+)")
+    remapped = {}
+    for k, v in state_dict.items():
+        m = pattern.match(k)
+        new_key = f"{m.group(1)}.{m.group(2)}.{m.group(3)}" if m else k
+        remapped[new_key] = v
+
+    missing, unexpected = model.load_state_dict(remapped, strict=False)
+    # num_batches_tracked buffers are safe to ignore if absent.
+    missing = [k for k in missing if not k.endswith("num_batches_tracked")]
+    unexpected = [k for k in unexpected if not k.endswith("num_batches_tracked")]
+    if missing or unexpected:
+        raise RuntimeError(
+            f"State dict mismatch after remap. Missing: {missing} Unexpected: {unexpected}")
+
+
 # ============================================================
 # EVALUATION
 # ============================================================
@@ -435,7 +465,7 @@ def main():
     checkpoint_path = TRAIN_OUTPUT_DIR / "best_model.pt"
     model = build_model()
     checkpoint = torch.load(checkpoint_path, map_location=DEVICE)
-    model.load_state_dict(checkpoint["model_state"])
+    load_state_dict_compat(model, checkpoint["model_state"])
     model.eval()
     log.info(f"Loaded checkpoint from epoch {checkpoint['epoch']}: "
              f"val_score={checkpoint.get('val_score', float('nan')):.4f}, "

@@ -66,16 +66,17 @@ import time
 # Single training basin (basin A from the patch generator). The held-out basin
 # is evaluated by evaluate_segformer.py, not here.
 PATCHES_DIR = Path(
-    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\patches_train_A\patches"
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\patches\patches_PL_train\patches"
 )
 METADATA_CSV = Path(
-    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\patches_train_A\patches_metadata.csv"
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\patches\patches_PL_train\patches_metadata.csv"
 )
 
 # Output dir - MUST be unique per variant
 OUTPUT_DIR = Path(
-    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer_7ch"
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\training_v05_segformer"
 )
+IMG_DIR = OUTPUT_DIR / "img"
 
 
 # ------- Reproducibility ------------------------------------
@@ -84,7 +85,7 @@ SEED = 42
 
 # ------- Hardware -------------------------------------------
 # num_workers > 0 now works because we run as a script with __main__ guard.
-NUM_WORKERS = 16
+NUM_WORKERS = 12
 
 
 # ------- Channels --------------------------------------------
@@ -107,13 +108,13 @@ WATER_CHANNEL = "water"
 # Split by reach id (comid) so segments of the same embankment stay together.
 # No test split: the held-out basin is the test set (evaluate_segformer.py).
 SPLIT_BY = "comid"
-TRAIN_FRAC = 0.85
-VAL_FRAC = 0.15
+TRAIN_FRAC = 0.75
+VAL_FRAC = 0.25
 
 
 # ------- Training hyperparameters ---------------------------
 BATCH_SIZE = 16
-N_EPOCHS = 175
+N_EPOCHS = 100
 LR = 1e-4
 WEIGHT_DECAY = 1e-3
 GRAD_CLIP = 1.0
@@ -573,12 +574,224 @@ def build_dataloaders(df_train, df_val, norm_stats):
     return train_loader, val_loader
 
 
+def select_positive_patch_ids(df_split, n_required, split_name):
+    """Select deterministic positive patch_ids by validating label pixels in NPZ files."""
+    rng = np.random.default_rng(SEED + (0 if split_name == "train" else 10_000))
+    patch_ids = df_split["patch_id"].astype(str).tolist()
+    rng.shuffle(patch_ids)
+
+    selected = []
+    for pid in patch_ids:
+        npz_path = PATCHES_DIR / f"{pid}.npz"
+        if not npz_path.exists():
+            continue
+
+        channels = dict(np.load(npz_path))
+        label = np.nan_to_num(channels[LABEL_CHANNEL].astype(np.float32), nan=0.0)
+        if float(label.sum()) > 0:
+            selected.append(pid)
+            if len(selected) == n_required:
+                break
+
+    if len(selected) < n_required:
+        raise RuntimeError(
+            f"Requested {n_required} positive patches for {split_name}, found only {len(selected)}"
+        )
+    return selected
+
+
+def build_fixed_locations(df_train, df_val):
+    """Create 6 fixed monitoring locations: 3 train + 3 val, all positive."""
+    train_ids = select_positive_patch_ids(df_train, n_required=3, split_name="train")
+    val_ids = select_positive_patch_ids(df_val, n_required=3, split_name="val")
+
+    fixed_locations = []
+    for i, pid in enumerate(train_ids, start=1):
+        fixed_locations.append(
+            {
+                "name": f"loc_{i:02d}_train",
+                "split": "train",
+                "patch_id": pid,
+            }
+        )
+    for i, pid in enumerate(val_ids, start=4):
+        fixed_locations.append(
+            {
+                "name": f"loc_{i:02d}_val",
+                "split": "val",
+                "patch_id": pid,
+            }
+        )
+    return fixed_locations
+
+
+def _normalize_channels_for_inference(channels, norm_stats):
+    """Normalize channels exactly like LeveeDataset._normalize for fixed-location rendering."""
+    out = {}
+    for ch_name in INPUT_CHANNELS:
+        arr = channels[ch_name].astype(np.float32)
+        arr = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
+        if ch_name == "dsm":
+            arr = arr - np.median(arr)
+        elif ch_name == WATER_CHANNEL:
+            pass
+        else:
+            stats = norm_stats[ch_name]
+            arr = (arr - stats["mean"]) / (stats["std"] + 1e-6)
+        out[ch_name] = arr
+    return out
+
+
+def save_fixed_location_images(model, norm_stats, fixed_locations, epoch, out_dir):
+    """Save per-epoch prediction visuals for fixed train/val locations."""
+    model.eval()
+    with torch.no_grad():
+        for loc in fixed_locations:
+            patch_id = loc["patch_id"]
+            split = loc["split"]
+            loc_dir = out_dir / loc["name"]
+            loc_dir.mkdir(parents=True, exist_ok=True)
+
+            npz_path = PATCHES_DIR / f"{patch_id}.npz"
+            channels = dict(np.load(npz_path))
+            channels_norm = _normalize_channels_for_inference(channels, norm_stats)
+
+            image = np.stack([channels_norm[c] for c in INPUT_CHANNELS], axis=0)
+            label = channels[LABEL_CHANNEL].astype(np.float32)
+
+            x = torch.from_numpy(image).unsqueeze(0).to(DEVICE)
+            with autocast(enabled=MIXED_PRECISION):
+                pred = model(x)
+                pred_prob = torch.sigmoid(pred)[0, 0].detach().cpu().numpy()
+
+            dsm = image[0]
+            dsm_lo, dsm_hi = np.percentile(dsm, [2, 98])
+            if dsm_hi <= dsm_lo:
+                dsm_lo, dsm_hi = float(dsm.min()), float(dsm.max() + 1e-6)
+
+            if WATER_CHANNEL in INPUT_CHANNELS:
+                water_idx = INPUT_CHANNELS.index(WATER_CHANNEL)
+                water = image[water_idx]
+            else:
+                water = np.zeros_like(label)
+
+            fig, axes = plt.subplots(1, 4, figsize=(13, 3.6), dpi=130)
+            panels = [
+                (dsm, "DSM", "terrain", (dsm_lo, dsm_hi)),
+                (water, "Water", "Blues", (0.0, 1.0)),
+                (label, "GT", "gray", (0.0, 1.0)),
+                (pred_prob, "Pred", "magma", (0.0, 1.0)),
+            ]
+
+            for ax, (arr, title, cmap, limits) in zip(axes, panels):
+                im = ax.imshow(arr, cmap=cmap, vmin=limits[0], vmax=limits[1])
+                ax.set_title(title, fontsize=10)
+                ax.set_xticks([])
+                ax.set_yticks([])
+                fig.colorbar(im, ax=ax, fraction=0.046, pad=0.02)
+
+            axes[-1].contour(pred_prob > 0.5, levels=[0.5], colors="cyan", linewidths=0.8)
+            fig.suptitle(
+                f"{loc['name']}  |  split={split}  |  patch_id={patch_id}  |  epoch={epoch:03d}",
+                fontsize=11,
+                y=1.03,
+            )
+            fig.tight_layout()
+
+            fig.savefig(loc_dir / f"epoch_{epoch:03d}.png", bbox_inches="tight")
+            fig.savefig(loc_dir / "latest.png", bbox_inches="tight")
+            plt.close(fig)
+
+
+def save_epoch_dashboard(history, epoch, preview_batch, out_dir, is_best=False):
+    """Save a visually rich per-epoch dashboard with curves and prediction previews."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    fig = plt.figure(figsize=(18, 10), dpi=130)
+    gs = fig.add_gridspec(3, 4, height_ratios=[1.2, 1.0, 1.0], hspace=0.28, wspace=0.2)
+
+    # --- Curves ---
+    ax_loss = fig.add_subplot(gs[0, :2])
+    ax_score = fig.add_subplot(gs[0, 2:])
+
+    epochs = history["epoch"]
+    ax_loss.plot(epochs, history["train_loss"], color="#264653", linewidth=2.5, label="Train loss")
+    ax_loss.plot(epochs, history["val_loss"], color="#e76f51", linewidth=2.5, label="Val loss")
+    ax_loss.set_title("Loss Trajectory", fontsize=13, weight="bold")
+    ax_loss.set_xlabel("Epoch")
+    ax_loss.set_ylabel("Loss")
+    ax_loss.grid(alpha=0.25)
+    ax_loss.legend(frameon=False)
+
+    ax_score.plot(epochs, history["val_dice"], color="#2a9d8f", linewidth=2.2, label="Val Dice")
+    ax_score.plot(epochs, history["val_cldice"], color="#8ab17d", linewidth=2.2, label="Val clDice")
+    ax_score.plot(epochs, history["val_score"], color="#f4a261", linewidth=2.8, label="Val Score")
+    ax_score.set_title("Validation Quality", fontsize=13, weight="bold")
+    ax_score.set_xlabel("Epoch")
+    ax_score.set_ylabel("Score")
+    ax_score.set_ylim(0, 1)
+    ax_score.grid(alpha=0.25)
+    ax_score.legend(frameon=False)
+
+    fig.suptitle(
+        f"Levee Training Dashboard  |  Epoch {epoch:03d}  |  Best val_score={max(history['val_score']):.4f}",
+        fontsize=16,
+        weight="bold",
+        y=0.98,
+    )
+
+    # --- Preview panel: DSM, Water, Label, Prediction ---
+    if preview_batch is not None:
+        image = preview_batch["image"]
+        label = preview_batch["label"]
+        pred_prob = preview_batch["pred_prob"]
+
+        n_show = min(2, image.shape[0])
+        for row in range(n_show):
+            dsm = image[row, 0].numpy()
+            water = image[row, -1].numpy()
+            gt = label[row, 0].numpy()
+            pp = pred_prob[row, 0].numpy()
+
+            # Robust display scaling for DSM to improve visual readability.
+            dsm_lo, dsm_hi = np.percentile(dsm, [2, 98])
+            if dsm_hi <= dsm_lo:
+                dsm_lo, dsm_hi = float(dsm.min()), float(dsm.max() + 1e-6)
+
+            panels = [
+                (dsm, "DSM (normalized)", "terrain", (dsm_lo, dsm_hi)),
+                (water, "Water mask", "Blues", (0.0, 1.0)),
+                (gt, "Ground truth", "gray", (0.0, 1.0)),
+                (pp, "Prediction prob.", "magma", (0.0, 1.0)),
+            ]
+
+            for col, (arr, title, cmap, limits) in enumerate(panels):
+                ax = fig.add_subplot(gs[row + 1, col])
+                im = ax.imshow(arr, cmap=cmap, vmin=limits[0], vmax=limits[1])
+                ax.set_title(f"Sample {row+1} - {title}", fontsize=10)
+                ax.set_xticks([])
+                ax.set_yticks([])
+                cb = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.02)
+                cb.ax.tick_params(labelsize=8)
+
+                if title == "Prediction prob.":
+                    ax.contour(pp > 0.5, levels=[0.5], colors="cyan", linewidths=0.8)
+
+    epoch_path = out_dir / f"epoch_{epoch:03d}.png"
+    latest_path = out_dir / "latest.png"
+    fig.savefig(epoch_path, bbox_inches="tight")
+    fig.savefig(latest_path, bbox_inches="tight")
+    if is_best:
+        fig.savefig(out_dir / "best.png", bbox_inches="tight")
+    plt.close(fig)
+
+
 # ============================================================
 # TRAIN
 # ============================================================
 
 
-def train(model, train_loader, val_loader):
+def train(model, train_loader, val_loader, norm_stats, fixed_locations):
     optimizer = AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
     scheduler = CosineAnnealingLR(optimizer, T_max=N_EPOCHS, eta_min=LR * 0.01)
     scaler = torch.amp.GradScaler(device="cuda", enabled=MIXED_PRECISION)
@@ -624,6 +837,7 @@ def train(model, train_loader, val_loader):
         model.eval()
         val_loss_sum, val_dice_sum, val_cldice_sum, n_val_batches = 0.0, 0.0, 0.0, 0
 
+        preview_batch = None
         with torch.no_grad():
             for batch in tqdm(val_loader, desc=f"Epoch {epoch+1}/{N_EPOCHS} [val]"):
                 image = batch["image"].to(DEVICE, non_blocking=True)
@@ -632,9 +846,18 @@ def train(model, train_loader, val_loader):
                 with autocast(enabled=MIXED_PRECISION):
                     pred = model(image)
                     loss = combined_loss(pred, label)
+                    pred_prob = torch.sigmoid(pred)
+
+                if preview_batch is None:
+                    n_preview = min(2, image.size(0))
+                    preview_batch = {
+                        "image": image[:n_preview].detach().cpu(),
+                        "label": label[:n_preview].detach().cpu(),
+                        "pred_prob": pred_prob[:n_preview].detach().cpu(),
+                    }
 
                 val_loss_sum += loss.item()
-                pred_bin = (torch.sigmoid(pred) > 0.5).float()
+                pred_bin = (pred_prob > 0.5).float()
 
                 inter = (pred_bin * label).sum(dim=(1, 2, 3))
                 union = pred_bin.sum(dim=(1, 2, 3)) + label.sum(dim=(1, 2, 3))
@@ -677,7 +900,8 @@ def train(model, train_loader, val_loader):
             f"val_score={val_score:.4f} | lr={current_lr:.2e}"
         )
 
-        if val_score > best_val_score:
+        is_best = val_score > best_val_score
+        if is_best:
             best_val_score = val_score
             torch.save(
                 {
@@ -692,6 +916,21 @@ def train(model, train_loader, val_loader):
                 checkpoint_path,
             )
             logging.info(f"  -> new best (val_score={val_score:.4f}); saved checkpoint")
+
+        save_epoch_dashboard(
+            history=history,
+            epoch=epoch + 1,
+            preview_batch=preview_batch,
+            out_dir=IMG_DIR,
+            is_best=is_best,
+        )
+        save_fixed_location_images(
+            model=model,
+            norm_stats=norm_stats,
+            fixed_locations=fixed_locations,
+            epoch=epoch + 1,
+            out_dir=IMG_DIR,
+        )
 
     pd.DataFrame(history).to_csv(OUTPUT_DIR / "training_history.csv", index=False)
     return history, checkpoint_path
@@ -772,6 +1011,84 @@ def plot_training_curves(history):
     plt.savefig(out_path, dpi=120, bbox_inches="tight")
     plt.close(fig)
     logging.info(f"Saved training curves to {out_path}")
+
+
+def save_final_summary_graph(history, out_dir):
+    """Save a final end-of-training summary figure."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    hist_df = pd.DataFrame(history)
+    best_idx = hist_df["val_score"].idxmax()
+    best_epoch = int(hist_df.loc[best_idx, "epoch"])
+
+    fig, axes = plt.subplots(2, 2, figsize=(16, 10), dpi=140)
+    fig.patch.set_facecolor("#fbfbf8")
+
+    # Loss panel
+    ax = axes[0, 0]
+    ax.plot(hist_df["epoch"], hist_df["train_loss"], color="#355070", linewidth=2.4, label="Train")
+    ax.plot(hist_df["epoch"], hist_df["val_loss"], color="#e56b6f", linewidth=2.4, label="Validation")
+    ax.axvline(best_epoch, color="#6d597a", linestyle="--", linewidth=1.5)
+    ax.set_title("Loss", weight="bold")
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Loss")
+    ax.grid(alpha=0.25)
+    ax.legend(frameon=False)
+
+    # Validation quality panel
+    ax = axes[0, 1]
+    ax.plot(hist_df["epoch"], hist_df["val_dice"], color="#2a9d8f", linewidth=2.2, label="Dice")
+    ax.plot(hist_df["epoch"], hist_df["val_cldice"], color="#8ab17d", linewidth=2.2, label="clDice")
+    ax.plot(hist_df["epoch"], hist_df["val_score"], color="#f4a261", linewidth=2.8, label="Score")
+    ax.axvline(best_epoch, color="#6d597a", linestyle="--", linewidth=1.5)
+    ax.set_ylim(0, 1)
+    ax.set_title("Validation Metrics", weight="bold")
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Score")
+    ax.grid(alpha=0.25)
+    ax.legend(frameon=False)
+
+    # Learning rate panel
+    ax = axes[1, 0]
+    ax.plot(hist_df["epoch"], hist_df["lr"], color="#bc6c25", linewidth=2.4)
+    ax.set_title("Learning Rate Schedule", weight="bold")
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("LR")
+    ax.grid(alpha=0.25)
+
+    # Summary text panel
+    ax = axes[1, 1]
+    ax.axis("off")
+    last = hist_df.iloc[-1]
+    best = hist_df.loc[best_idx]
+    summary_text = (
+        "Training Summary\n\n"
+        f"Total epochs: {int(last['epoch'])}\n"
+        f"Best epoch:  {best_epoch}\n"
+        f"Best val_score:  {best['val_score']:.4f}\n"
+        f"Best val_dice:   {best['val_dice']:.4f}\n"
+        f"Best val_cldice: {best['val_cldice']:.4f}\n\n"
+        f"Final train_loss: {last['train_loss']:.4f}\n"
+        f"Final val_loss:   {last['val_loss']:.4f}\n"
+        f"Final val_score:  {last['val_score']:.4f}"
+    )
+    ax.text(
+        0.03,
+        0.95,
+        summary_text,
+        va="top",
+        ha="left",
+        fontsize=12,
+        family="monospace",
+        bbox=dict(boxstyle="round,pad=0.7", facecolor="#fefae0", edgecolor="#dda15e", alpha=0.95),
+    )
+
+    fig.suptitle("Final Training Report", fontsize=18, weight="bold", y=0.98)
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
+
+    out_path = out_dir / "final_summary.png"
+    fig.savefig(out_path, bbox_inches="tight")
+    plt.close(fig)
+    logging.info(f"Saved final summary graph to {out_path}")
 
 
 # ============================================================
@@ -932,6 +1249,7 @@ def main():
     torch.cuda.manual_seed_all(SEED)
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    IMG_DIR.mkdir(parents=True, exist_ok=True)
     log = setup_logging(OUTPUT_DIR)
 
     log.info(f"Device: {DEVICE}")
@@ -941,6 +1259,7 @@ def main():
         f"Hyperparams: batch={BATCH_SIZE}, epochs={N_EPOCHS}, lr={LR}, wd={WEIGHT_DECAY}"
     )
     log.info(f"num_workers={NUM_WORKERS}")
+    log.info(f"Image dashboard dir: {IMG_DIR}")
 
     # 1. Load data and split (train/val only)
     df_train, df_val = load_and_split_metadata()
@@ -951,15 +1270,27 @@ def main():
     # 3. Build dataloaders
     train_loader, val_loader = build_dataloaders(df_train, df_val, norm_stats)
 
+    # 3b. Fixed monitoring locations (always positive): 3 train + 3 val
+    fixed_locations = build_fixed_locations(df_train, df_val)
+    for loc in fixed_locations:
+        log.info(f"Fixed location: {loc['name']} -> patch_id={loc['patch_id']} ({loc['split']})")
+
     # 4. Build model
     model = build_model()
 
     # 5. Train
     log.info("Starting training...")
-    history, checkpoint_path = train(model, train_loader, val_loader)
+    history, checkpoint_path = train(
+        model,
+        train_loader,
+        val_loader,
+        norm_stats,
+        fixed_locations,
+    )
 
     # 6. Plot curves
     plot_training_curves(history)
+    save_final_summary_graph(history, IMG_DIR)
 
     # 7. Load best checkpoint and run a val-only sanity check
     log.info("Loading best checkpoint for val evaluation...")
