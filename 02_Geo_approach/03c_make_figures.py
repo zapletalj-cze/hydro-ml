@@ -51,8 +51,8 @@ BASE = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorp
 # The three architecture runs to compare. "arch" only drives the colour mapping.
 RUNS = [
     {"name": "SegFormer (mit_b2)", "arch": "segformer",     "dir": BASE / "training_v05_segformer"},
-    {"name": "U-Net (ResNet34)",   "arch": "resnet_unet",   "dir": BASE / "training_v05_resnet_unet"},
-    {"name": "DeepLabV3+",         "arch": "deeplabv3plus", "dir": BASE / "training_v05_deeplabv3plus"},
+    {"name": "U-Net (ResNet34)",   "arch": "resnet_unet",   "dir": BASE / "training_v05_unet_resnet"},
+    {"name": "DeepLabV3+",         "arch": "deeplabv3plus", "dir": BASE / "training_v05_deep_labv3plus"},
 ]
 
 OUTPUT_DIR = BASE / "thesis_figures"
@@ -204,16 +204,16 @@ def fig_training_curves(hist, out):
         return
     be = int(best_epoch_row(hist)["epoch"])
     fig, ax = plt.subplots(1, 2, figsize=(9.6, 3.6))
-    ax[0].plot(hist["epoch"], hist["train_loss"], color=C_TRAIN, lw=2.1, label="trénink")
-    ax[0].plot(hist["epoch"], hist["val_loss"], color=C_VAL, lw=2.1, ls=(0, (5, 2)), label="validace")
-    ax[0].axvline(be, color=SECOND, ls=":", lw=1.1)
+    ax[0].plot(hist["epoch"], hist["train_loss"], color=C_TRAIN, lw=1.3, label="trénink")
+    ax[0].plot(hist["epoch"], hist["val_loss"], color=C_VAL, lw=1.3, ls=(0, (5, 2)), label="validace")
+    ax[0].axvline(be, color=SECOND, ls=":", lw=1.0)
     ax[0].set_xlabel(LBL_EPOCH); ax[0].set_ylabel("Ztráta"); ax[0].set_title("Trénovací a validační ztráta")
     ax[0].set_xlim(left=hist["epoch"].min()); _tidy(ax[0]); ax[0].legend(frameon=False)
 
-    ax[1].plot(hist["epoch"], hist["val_dice"], color=C_DICE, lw=2.1, label="Dice")
-    ax[1].plot(hist["epoch"], hist["val_cldice"], color=C_CLDICE, lw=2.1, label="clDice")
-    ax[1].plot(hist["epoch"], hist["val_score"], color=C_SCORE, lw=2.4, label="skóre")
-    ax[1].axvline(be, color=SECOND, ls=":", lw=1.1, label=f"nejlepší epocha ({be})")
+    ax[1].plot(hist["epoch"], hist["val_dice"], color=C_DICE, lw=1.3, label="Dice")
+    ax[1].plot(hist["epoch"], hist["val_cldice"], color=C_CLDICE, lw=1.3, label="clDice")
+    ax[1].plot(hist["epoch"], hist["val_score"], color=C_SCORE, lw=1.5, label="skóre")
+    ax[1].axvline(be, color=SECOND, ls=":", lw=1.0, label=f"nejlepší epocha ({be})")
     ax[1].set_xlabel(LBL_EPOCH); ax[1].set_ylabel("Hodnota metriky"); ax[1].set_ylim(0, 1)
     ax[1].yaxis.set_major_locator(MultipleLocator(0.2)); ax[1].set_xlim(left=hist["epoch"].min())
     ax[1].set_title("Validační Dice, clDice a skóre"); _tidy(ax[1]); ax[1].legend(frameon=False)
@@ -303,17 +303,17 @@ def fig_overview(run, out):
     if hist is not None:
         be = int(best_epoch_row(hist)["epoch"])
         a0 = fig.add_subplot(gs[0, 0])
-        a0.plot(hist["epoch"], hist["train_loss"], color=C_TRAIN, lw=2.0, label="trénink")
-        a0.plot(hist["epoch"], hist["val_loss"], color=C_VAL, lw=2.0, ls=(0, (5, 2)), label="validace")
-        a0.axvline(be, color=SECOND, ls=":", lw=1.1)
+        a0.plot(hist["epoch"], hist["train_loss"], color=C_TRAIN, lw=1.3, label="trénink")
+        a0.plot(hist["epoch"], hist["val_loss"], color=C_VAL, lw=1.3, ls=(0, (5, 2)), label="validace")
+        a0.axvline(be, color=SECOND, ls=":", lw=1.0)
         a0.set_title("Ztráta"); a0.set_xlabel(LBL_EPOCH); a0.set_ylabel("Ztráta")
         a0.set_xlim(left=hist["epoch"].min()); _tidy(a0); a0.legend(frameon=False)
 
         a1 = fig.add_subplot(gs[0, 1:])
-        a1.plot(hist["epoch"], hist["val_dice"], color=C_DICE, lw=2.0, label="Dice")
-        a1.plot(hist["epoch"], hist["val_cldice"], color=C_CLDICE, lw=2.0, label="clDice")
-        a1.plot(hist["epoch"], hist["val_score"], color=C_SCORE, lw=2.3, label="skóre")
-        a1.axvline(be, color=SECOND, ls=":", lw=1.1, label=f"nejlepší epocha ({be})")
+        a1.plot(hist["epoch"], hist["val_dice"], color=C_DICE, lw=1.3, label="Dice")
+        a1.plot(hist["epoch"], hist["val_cldice"], color=C_CLDICE, lw=1.3, label="clDice")
+        a1.plot(hist["epoch"], hist["val_score"], color=C_SCORE, lw=1.5, label="skóre")
+        a1.axvline(be, color=SECOND, ls=":", lw=1.0, label=f"nejlepší epocha ({be})")
         a1.set_title("Validační metriky"); a1.set_xlabel(LBL_EPOCH); a1.set_ylim(0, 1)
         a1.yaxis.set_major_locator(MultipleLocator(0.2)); a1.set_xlim(left=hist["epoch"].min())
         _tidy(a1); a1.legend(frameon=False, ncol=2)
@@ -358,7 +358,7 @@ def fig_curves_comparison(runs, out):
     for a, (col, ttl) in zip(ax, panels):
         for i, r in enumerate(runs_h):
             c = arch_color(r["arch"], i)
-            a.plot(r["hist"]["epoch"], r["hist"][col], color=c, lw=2.2, label=r["name"])
+            a.plot(r["hist"]["epoch"], r["hist"][col], color=c, lw=1.4, label=r["name"])
         a.set_xlabel(LBL_EPOCH); a.set_ylabel("Hodnota"); a.set_ylim(0, 1)
         a.yaxis.set_major_locator(MultipleLocator(0.2)); a.set_title(ttl); _tidy(a)
     ax[0].legend(frameon=False, loc="lower right")
@@ -456,13 +456,14 @@ def fig_comparison_table(df, out):
     if df is None or len(df) == 0:
         return
     # highlight the best architecture per numeric column
-    fig, ax = plt.subplots(figsize=(min(2.0 + 1.15 * len(df.columns), 13), 0.7 + 0.5 * len(df)))
+    fig, ax = plt.subplots(figsize=(2.4 + 1.55 * len(df.columns), 0.9 + 0.5 * len(df)))
     ax.axis("off")
     cols = list(df.columns)
     cell_text = df.astype(object).values.tolist()
     table = ax.table(cellText=cell_text, colLabels=cols, cellLoc="center", loc="center")
     table.auto_set_font_size(False)
     table.set_fontsize(10)
+    table.auto_set_column_width(range(len(cols)))
     table.scale(1, 1.5)
 
     numeric_cols = [c for c in cols if c not in ("Architektura", "Nejlepší epocha")]
@@ -481,7 +482,7 @@ def fig_comparison_table(df, out):
                 cell.set_text_props(color=INK, fontweight="bold")
             if c in best_row and best_row[c] == (r - 1):
                 cell.set_facecolor("#E5F3F3"); cell.set_text_props(color="#0E7C7B", fontweight="bold")
-    ax.set_title("Porovnání architektur, souhrn (nejlepší hodnota zvýrazněna)",
+    ax.set_title("Porovnání architektur, souhrn",
                  fontsize=12.5, fontweight="semibold", color=INK, pad=14)
     save(fig, out)
 
