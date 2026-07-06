@@ -633,7 +633,7 @@ def save_prob_raster_geotiff(prob, geotransform, output_path):
         height_px,
         1,
         gdal.GDT_Float32,
-        options=["COMPRESS=LZW", "PREDICTOR=2", "TILED=YES"],
+        options=["COMPRESS=LZW", "PREDICTOR=2", "TILED=YES", "BIGTIFF=YES"],
     )
     ds.SetGeoTransform(geotransform)
     srs = gdal.osr.SpatialReference()

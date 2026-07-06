@@ -61,8 +61,8 @@ AOI_POLYGON = [
 # AOI_POLYGON = load_polygon_from_file("aoi.gpkg")
 
 DATE_RANGE = ("2019-01-01", "2025-12-31")  # full mission
-OUTPUT_DIR = Path(r"C:\Computation\data\atl08_PL")
-OUTPUT_GPKG = Path(r"C:\Computation\data\atl08_terrain_heights.gpkg")
+OUTPUT_DIR = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sat_lidar\01_data\ICE_SAT\ATL08")
+OUTPUT_GPKG = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sat_lidar\01_data\ICE_SAT\ATL08\atl08_terrain_heights_new.gpkg")
 OUTPUT_CSV = OUTPUT_GPKG.with_suffix(".csv")
 
 TERRAIN_VAR = "h_te_median"  # robust terrain height per 100m segment
