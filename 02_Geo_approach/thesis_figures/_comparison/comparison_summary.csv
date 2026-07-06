@@ -1,0 +1,4 @@
+Architektura,Nejlepší epocha,Val. skóre,Precision,Recall,F1,IoU,Dice,clDice
+SegFormer (mit_b2),92,0.604,0.602,0.507,0.55,0.38,0.55,0.572
+U-Net (ResNet34),97,0.573,0.547,0.421,0.476,0.312,0.476,0.475
+DeepLabV3+,78,0.573,0.58,0.402,0.475,0.311,0.475,0.436
