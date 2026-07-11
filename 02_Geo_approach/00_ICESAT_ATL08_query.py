@@ -61,8 +61,8 @@ AOI_POLYGON = [
 # AOI_POLYGON = load_polygon_from_file("aoi.gpkg")
 
 DATE_RANGE = ("2019-01-01", "2025-12-31")  # full mission
-OUTPUT_DIR = Path(r"C:\Computation\data\atl08_PL")
-OUTPUT_GPKG = Path(r"C:\Computation\data\atl08_terrain_heights.gpkg")
+OUTPUT_DIR = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sat_lidar\01_data\ICE_SAT\ATL08")
+OUTPUT_GPKG = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sat_lidar\01_data\ICE_SAT\ATL08\atl08_terrain_heights_new.gpkg")
 OUTPUT_CSV = OUTPUT_GPKG.with_suffix(".csv")
 
 TERRAIN_VAR = "h_te_median"  # robust terrain height per 100m segment
@@ -82,7 +82,7 @@ USE_20M_TERRAIN = True
 # MIN_PROMINENCE_M. The immediate vicinity (PROM_EXCLUDE_M) is excluded from
 # the baseline so the bump does not raise its own reference.
 DETECTED_LEVEES_GPKG = Path(
-    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer_7ch\interference_outputs\detected_levees.gpkg"
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\training_v06_segformer_PL_US\predictions_eval\levees_predicted_Odra.gpkg"
 )
 CRS_METRIC = 2180            # metric CRS for buffering and along-track distances
 LEVEE_BUFFER_M = 30.0        # max distance point-to-levee to be a candidate
@@ -92,17 +92,12 @@ MIN_NEIGHBORS = 4            # minimum neighbours to compute a baseline
 MIN_PROMINENCE_M = 1.0       # required height above the baseline
 OUTPUT_CREST_GPKG = OUTPUT_GPKG.with_name(OUTPUT_GPKG.stem + "_crest.gpkg")
 
-# ------- Quality filters (relaxed for levee-crest work) ---------------------
-# Rationale: dz is aggregated as a median over many points, so per-point noise
-# is tolerable; over-strict thresholds preferentially remove exactly the levee
-# segments (vegetated banks, terrain deviating from the reference DEM).
-MAX_TE_UNCERTAINTY_M = 2.5   # was 1.5; median aggregation tolerates more noise
-MIN_TE_PHOTONS = 20          # was 50; vegetated banks rarely reach 50
-FILTER_CLOUDS = True         # keep hard: cloudy heights are useless
-FILTER_SATURATION = True     # keep hard
-FILTER_TERRAIN_FLAG = False  # was True; the flag penalises deviation from the
-                             # reference DEM, which is what a levee IS - it was
-                             # preferentially killing on-levee segments
+# ------- Quality filters (consistent with 10_atl08_crest_heights.py) --------
+MAX_TE_UNCERTAINTY_M = 1.5   # drop segments with terrain uncertainty above this
+MIN_TE_PHOTONS = 50          # minimum terrain photons per segment
+FILTER_CLOUDS = True         # drop cloud / blowing-snow flagged segments
+FILTER_SATURATION = True     # drop saturated segments
+FILTER_TERRAIN_FLAG = True   # drop segments flagged as deviating from reference DEM
 REQUIRE_NIGHT = False        # keep only night segments (off: keep day+night, record flag)
 
 # ------- Datum: ellipsoidal WGS84 -> orthometric EGM2008 --------------------
@@ -116,7 +111,6 @@ FILL_ABS = 1e30  # ATL08 float fill (~3.4e38); |value| above this is invalid
 # ---------------------------------------------------------------------------
 # HELPER
 # ---------------------------------------------------------------------------
-
 
 def load_polygon_from_file(path: str) -> list:
     gdf = gpd.read_file(path, engine="pyogrio").to_crs(epsg=4326)
