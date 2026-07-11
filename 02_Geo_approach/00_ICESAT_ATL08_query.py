@@ -61,12 +61,36 @@ AOI_POLYGON = [
 # AOI_POLYGON = load_polygon_from_file("aoi.gpkg")
 
 DATE_RANGE = ("2019-01-01", "2025-12-31")  # full mission
-OUTPUT_DIR = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sat_lidar\01_data\ICE_SAT\ATL08")
-OUTPUT_GPKG = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sat_lidar\01_data\ICE_SAT\ATL08\atl08_terrain_heights_new.gpkg")
+OUTPUT_DIR = Path(r"C:\Computation\data\atl08_PL")
+OUTPUT_GPKG = Path(r"C:\Computation\data\atl08_terrain_heights.gpkg")
 OUTPUT_CSV = OUTPUT_GPKG.with_suffix(".csv")
 
 TERRAIN_VAR = "h_te_median"  # robust terrain height per 100m segment
 BEAMS = ["gt1l", "gt1r", "gt2l", "gt2r", "gt3l", "gt3r"]
+
+# ------- 20 m terrain points (crest detection needs finer sampling) ---------
+# ATL08 v005+ provides terrain heights at 20 m subsegments
+# (land_segments/latitude_20m, longitude_20m, terrain/h_te_best_fit_20m).
+# A levee crest a few metres wide is diluted in the 100 m median, so the 20 m
+# points are used as the primary source when present; 100 m is the fallback.
+USE_20M_TERRAIN = True
+
+# ------- Crest selection against detected levees ----------------------------
+# Points are kept as crest candidates when (a) they lie within LEVEE_BUFFER_M
+# of a detected levee line and (b) their along-track profile shows a clear
+# raised feature: height minus the median of neighbours in the window exceeds
+# MIN_PROMINENCE_M. The immediate vicinity (PROM_EXCLUDE_M) is excluded from
+# the baseline so the bump does not raise its own reference.
+DETECTED_LEVEES_GPKG = Path(
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer_7ch\interference_outputs\detected_levees.gpkg"
+)
+CRS_METRIC = 2180            # metric CRS for buffering and along-track distances
+LEVEE_BUFFER_M = 30.0        # max distance point-to-levee to be a candidate
+PROM_WINDOW_M = 300.0        # along-track neighbourhood for the baseline
+PROM_EXCLUDE_M = 40.0        # exclude this vicinity from the baseline
+MIN_NEIGHBORS = 4            # minimum neighbours to compute a baseline
+MIN_PROMINENCE_M = 1.0       # required height above the baseline
+OUTPUT_CREST_GPKG = OUTPUT_GPKG.with_name(OUTPUT_GPKG.stem + "_crest.gpkg")
 
 # ------- Quality filters (consistent with 10_atl08_crest_heights.py) --------
 MAX_TE_UNCERTAINTY_M = 1.5   # drop segments with terrain uncertainty above this
@@ -220,6 +244,18 @@ def extract_terrain_heights(h5_path: Path, aoi_polygon: Polygon) -> list:
             if REQUIRE_NIGHT:
                 valid &= np.where(np.isfinite(night), night == 1, False)
 
+            # ---- Optional 20 m subsegment terrain (finer sampling for crests) ----
+            # Quality flags exist at the 100 m segment level and are inherited
+            # by the five 20 m subpoints of each segment.
+            use20 = (USE_20M_TERRAIN
+                     and "latitude_20m" in land_seg
+                     and "longitude_20m" in land_seg
+                     and "h_te_best_fit_20m" in terrain)
+            if use20:
+                lat20 = np.asarray(land_seg["latitude_20m"][:], dtype=np.float64)
+                lon20 = np.asarray(land_seg["longitude_20m"][:], dtype=np.float64)
+                h20 = _mask_fill(terrain["h_te_best_fit_20m"][:])
+
             # ---- Spatial pre-filter by bbox (cheap), then exact polygon test ----
             valid &= (lon >= minx) & (lon <= maxx) & (lat >= miny) & (lat <= maxy)
             idx = np.where(valid)[0]
@@ -232,10 +268,43 @@ def extract_terrain_heights(h5_path: Path, aoi_polygon: Polygon) -> list:
             for k, i in enumerate(idx):
                 if not inside[k]:
                     continue
+                if use20:
+                    # Emit the five 20 m subpoints of this quality-passing segment.
+                    for j in range(lat20.shape[1]):
+                        la, lo, hh = lat20[i, j], lon20[i, j], h20[i, j]
+                        if not (np.isfinite(la) and np.isfinite(lo) and np.isfinite(hh)):
+                            continue
+                        if np.abs(la) >= FILL_ABS or np.abs(lo) >= FILL_ABS:
+                            continue
+                        records.append(
+                            {
+                                "lat": float(la),
+                                "lon": float(lo),
+                                "res": "20m",
+                                "h_te_ellipsoid": float(hh),
+                                "h_te_uncertainty": float(te_unc[i]),
+                                "n_te_photons": int(n_te[i]) if np.isfinite(n_te[i]) else -1,
+                                "snr": float(snr[i]) if np.isfinite(snr[i]) else np.nan,
+                                "night_flag": float(night[i]) if np.isfinite(night[i]) else np.nan,
+                                "layer_flag": float(layer[i]) if np.isfinite(layer[i]) else np.nan,
+                                "cloud_flag_atm": float(cloud[i]) if np.isfinite(cloud[i]) else np.nan,
+                                "msw_flag": float(msw[i]) if np.isfinite(msw[i]) else np.nan,
+                                "sat_flag": float(sat[i]) if np.isfinite(sat[i]) else np.nan,
+                                "terrain_flg": float(terr_flg[i]) if np.isfinite(terr_flg[i]) else np.nan,
+                                "dem_h": float(dem_h[i]) if np.isfinite(dem_h[i]) else np.nan,
+                                # small offset keeps the five subpoints ordered along track
+                                "delta_time": float(delta_time[i]) + 0.0028 * j
+                                if np.isfinite(delta_time[i]) else np.nan,
+                                "beam": beam,
+                                "granule": granule_name,
+                            }
+                        )
+                    continue
                 records.append(
                     {
                         "lat": float(lat[i]),
                         "lon": float(lon[i]),
+                        "res": "100m",
                         "h_te_ellipsoid": float(h_te[i]),
                         "h_te_uncertainty": float(te_unc[i]),
                         "n_te_photons": int(n_te[i]) if np.isfinite(n_te[i]) else -1,
@@ -275,8 +344,68 @@ def add_orthometric_height(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
-# STEP 5: Build GeoDataFrame and save
+# STEP 4b: Crest selection against detected levees
 # ---------------------------------------------------------------------------
+
+
+def flag_near_levees(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Flag points lying within LEVEE_BUFFER_M of a detected levee line."""
+    from shapely.ops import unary_union
+
+    gdf["near_levee"] = False
+    if not Path(DETECTED_LEVEES_GPKG).exists():
+        print(f"  detected levees not found, skipping crest selection: {DETECTED_LEVEES_GPKG}")
+        return gdf
+
+    levees = gpd.read_file(DETECTED_LEVEES_GPKG, engine="pyogrio")
+    if levees.crs is None:
+        levees.set_crs(epsg=CRS_METRIC, inplace=True)
+    elif levees.crs.to_epsg() != CRS_METRIC:
+        levees = levees.to_crs(epsg=CRS_METRIC)
+
+    zone = unary_union(levees.geometry.buffer(LEVEE_BUFFER_M).tolist())
+    pts_m = gdf.to_crs(epsg=CRS_METRIC)
+    gdf["near_levee"] = pts_m.geometry.within(zone).values
+    print(f"  points within {LEVEE_BUFFER_M:.0f} m of a detected levee: "
+          f"{int(gdf['near_levee'].sum()):,} / {len(gdf):,}")
+    return gdf
+
+
+def add_prominence(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """
+    Along-track prominence for near-levee candidates: point height minus the
+    median height of neighbours within PROM_WINDOW_M along the same track,
+    excluding the PROM_EXCLUDE_M vicinity so the bump does not raise its own
+    baseline. Computed per (granule, beam, res) group, ordered by delta_time.
+    """
+    gdf["prominence_m"] = np.nan
+    if not gdf["near_levee"].any():
+        return gdf
+
+    pts_m = gdf.to_crs(epsg=CRS_METRIC)
+    xs, ys = pts_m.geometry.x.values, pts_m.geometry.y.values
+
+    for _, idx in gdf.groupby(["granule", "beam", "res"]).groups.items():
+        idx = list(idx)
+        sub = gdf.loc[idx]
+        order = np.argsort(sub["delta_time"].values)
+        oidx = np.array(idx)[order]
+        x = xs[gdf.index.get_indexer(oidx)]
+        y = ys[gdf.index.get_indexer(oidx)]
+        h = gdf.loc[oidx, "h_te_ortho"].values
+        near = gdf.loc[oidx, "near_levee"].values
+        # cumulative along-track distance
+        d = np.concatenate([[0.0], np.cumsum(np.hypot(np.diff(x), np.diff(y)))])
+
+        prom = np.full(len(oidx), np.nan)
+        for i in np.where(near)[0]:
+            dd = np.abs(d - d[i])
+            m = (dd <= PROM_WINDOW_M) & (dd >= PROM_EXCLUDE_M) & np.isfinite(h)
+            if int(m.sum()) >= MIN_NEIGHBORS:
+                prom[i] = h[i] - float(np.median(h[m]))
+        gdf.loc[oidx, "prominence_m"] = prom
+
+    return gdf
 
 
 def build_geodataframe(df: pd.DataFrame) -> gpd.GeoDataFrame:
@@ -323,7 +452,7 @@ def main():
           f"[{df['geoid_N'].min():+.2f}, {df['geoid_N'].max():+.2f}]")
 
     # Primary elevation field first
-    ordered = ["lon", "lat", "beam", "granule", "delta_time",
+    ordered = ["lon", "lat", "res", "beam", "granule", "delta_time",
                "h_te_ortho", "h_te_ellipsoid", "geoid_N",
                "h_te_uncertainty", "n_te_photons", "snr",
                "night_flag", "layer_flag", "cloud_flag_atm", "msw_flag",
@@ -331,13 +460,25 @@ def main():
     ordered = [c for c in ordered if c in df.columns]
     df = df[ordered]
 
-    df.to_csv(OUTPUT_CSV, index=False)
+    gdf = build_geodataframe(df)
+
+    print("\nCrest selection against detected levees...")
+    gdf = flag_near_levees(gdf)
+    gdf = add_prominence(gdf)
+    gdf["crest_flag"] = gdf["near_levee"] & (gdf["prominence_m"] >= MIN_PROMINENCE_M)
+    n_crest = int(gdf["crest_flag"].sum())
+    print(f"  crest candidates (prominence >= {MIN_PROMINENCE_M} m): {n_crest:,}")
+
+    pd.DataFrame(gdf.drop(columns="geometry")).to_csv(OUTPUT_CSV, index=False)
     print(f"Saved CSV  -> {OUTPUT_CSV}")
 
-    gdf = build_geodataframe(df)
     OUTPUT_GPKG.parent.mkdir(parents=True, exist_ok=True)
     gdf.to_file(OUTPUT_GPKG, driver="GPKG", engine="pyogrio")
     print(f"Saved GPKG -> {OUTPUT_GPKG}")
+
+    if n_crest > 0:
+        gdf[gdf["crest_flag"]].to_file(OUTPUT_CREST_GPKG, driver="GPKG", engine="pyogrio")
+        print(f"Saved crest subset -> {OUTPUT_CREST_GPKG}")
 
     h = gdf["h_te_ortho"]
     print(f"\nOrthometric terrain height (EGM2008) summary:")
@@ -346,6 +487,13 @@ def main():
     print(f"  max:  {h.max():.2f} m")
     print(f"  mean: {h.mean():.2f} m")
     print(f"  std:  {h.std():.2f} m")
+    if n_crest > 0:
+        hc = gdf.loc[gdf["crest_flag"], "h_te_ortho"]
+        pc = gdf.loc[gdf["crest_flag"], "prominence_m"]
+        print(f"\nCrest candidates summary:")
+        print(f"  n:            {n_crest}")
+        print(f"  height mean:  {hc.mean():.2f} m")
+        print(f"  prominence:   mean {pc.mean():.2f} m, max {pc.max():.2f} m")
 
 
 if __name__ == "__main__":
