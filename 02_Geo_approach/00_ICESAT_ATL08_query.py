@@ -234,21 +234,6 @@ def extract_terrain_heights(h5_path: Path, aoi_polygon: Polygon) -> list:
             dem_h = _mask_fill(_col(land_seg, "dem_h", n))
             delta_time = np.asarray(_col(land_seg, "delta_time", n), dtype=np.float64)
 
-            # ---- Quality mask (missing optional flags are treated as passing) ----
-            valid = np.isfinite(h_te)
-            valid &= np.isfinite(te_unc) & (te_unc <= MAX_TE_UNCERTAINTY_M)
-            valid &= n_te >= MIN_TE_PHOTONS
-            if FILTER_CLOUDS:
-                clear = np.where(np.isfinite(layer), layer == 0, True)
-                clear &= np.where(np.isfinite(cloud), cloud <= 1, True)
-                valid &= clear
-            if FILTER_SATURATION:
-                valid &= np.where(np.isfinite(sat), sat == 0, True)
-            if FILTER_TERRAIN_FLAG:
-                valid &= np.where(np.isfinite(terr_flg), terr_flg == 0, True)
-            if REQUIRE_NIGHT:
-                valid &= np.where(np.isfinite(night), night == 1, False)
-
             # ---- Optional 20 m subsegment terrain (finer sampling for crests) ----
             # Quality flags exist at the 100 m segment level and are inherited
             # by the five 20 m subpoints of each segment.
@@ -260,6 +245,31 @@ def extract_terrain_heights(h5_path: Path, aoi_polygon: Polygon) -> list:
                 lat20 = np.asarray(land_seg["latitude_20m"][:], dtype=np.float64)
                 lon20 = np.asarray(land_seg["longitude_20m"][:], dtype=np.float64)
                 h20 = _mask_fill(terrain["h_te_best_fit_20m"][:])
+
+            # ---- Quality mask ----------------------------------------------
+            # Height validity: on the 20 m route a segment counts as valid when
+            # ANY of its 20 m heights is valid; the 100 m median may be fill
+            # while the subsegments are fine (gating on h_te killed those).
+            if use20:
+                valid = np.isfinite(h20).any(axis=1)
+            else:
+                valid = np.isfinite(h_te)
+            # QA fields are pass-through when fill/absent: thresholds apply
+            # only where the field carries a real value. h_te_uncertainty is
+            # frequently fill in ATL08, requiring it finite silently dropped
+            # most segments.
+            valid &= np.where(np.isfinite(te_unc), te_unc <= MAX_TE_UNCERTAINTY_M, True)
+            valid &= np.where(np.isfinite(n_te), n_te >= MIN_TE_PHOTONS, True)
+            if FILTER_CLOUDS:
+                clear = np.where(np.isfinite(layer), layer == 0, True)
+                clear &= np.where(np.isfinite(cloud), cloud <= 1, True)
+                valid &= clear
+            if FILTER_SATURATION:
+                valid &= np.where(np.isfinite(sat), sat == 0, True)
+            if FILTER_TERRAIN_FLAG:
+                valid &= np.where(np.isfinite(terr_flg), terr_flg == 0, True)
+            if REQUIRE_NIGHT:
+                valid &= np.where(np.isfinite(night), night == 1, False)
 
             # ---- Spatial pre-filter by bbox (cheap), then exact polygon test ----
             valid &= (lon >= minx) & (lon <= maxx) & (lat >= miny) & (lat <= maxy)
