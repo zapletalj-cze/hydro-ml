@@ -92,12 +92,17 @@ MIN_NEIGHBORS = 4            # minimum neighbours to compute a baseline
 MIN_PROMINENCE_M = 1.0       # required height above the baseline
 OUTPUT_CREST_GPKG = OUTPUT_GPKG.with_name(OUTPUT_GPKG.stem + "_crest.gpkg")
 
-# ------- Quality filters (consistent with 10_atl08_crest_heights.py) --------
-MAX_TE_UNCERTAINTY_M = 1.5   # drop segments with terrain uncertainty above this
-MIN_TE_PHOTONS = 50          # minimum terrain photons per segment
-FILTER_CLOUDS = True         # drop cloud / blowing-snow flagged segments
-FILTER_SATURATION = True     # drop saturated segments
-FILTER_TERRAIN_FLAG = True   # drop segments flagged as deviating from reference DEM
+# ------- Quality filters (relaxed for levee-crest work) ---------------------
+# Rationale: dz is aggregated as a median over many points, so per-point noise
+# is tolerable; over-strict thresholds preferentially remove exactly the levee
+# segments (vegetated banks, terrain deviating from the reference DEM).
+MAX_TE_UNCERTAINTY_M = 2.5   # was 1.5; median aggregation tolerates more noise
+MIN_TE_PHOTONS = 20          # was 50; vegetated banks rarely reach 50
+FILTER_CLOUDS = True         # keep hard: cloudy heights are useless
+FILTER_SATURATION = True     # keep hard
+FILTER_TERRAIN_FLAG = False  # was True; the flag penalises deviation from the
+                             # reference DEM, which is what a levee IS - it was
+                             # preferentially killing on-levee segments
 REQUIRE_NIGHT = False        # keep only night segments (off: keep day+night, record flag)
 
 # ------- Datum: ellipsoidal WGS84 -> orthometric EGM2008 --------------------
