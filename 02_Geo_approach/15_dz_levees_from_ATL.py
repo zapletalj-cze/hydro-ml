@@ -61,8 +61,8 @@ from shapely.strtree import STRtree
 # CONFIG
 # ============================================================
 
-DETECTED_LEVEES_GPKG = Path(r"D:\...\interference_outputs\detected_levees.gpkg")
-CREST_POINTS_GPKG    = Path(r"D:\...\atl08_terrain_heights_crest.gpkg")  # from 00 script
+DETECTED_LEVEES_GPKG = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\training_v06_segformer_PL_US\predictions_eval\levees_predicted_Odra.gpkg")
+CREST_POINTS_GPKG    = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sat_lidar\01_data\ICE_SAT\ATL08\atl08_terrain_heights_new.gpkg")  # from 00 script
 DSM_TIF              = Path(r"D:\...\COP_DSM_10m_2180.tif")              # EGM2008, EPSG:2180
 
 OUTPUT_GPKG = Path(r"D:\...\levee_segments_z.gpkg")
