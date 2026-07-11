@@ -1,0 +1,30 @@
+granule: D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sat_lidar\01_data\ICE_SAT\ATL08\ATL08_20251019002542_05262906_007_01.h5
+segments total: 100,130
+
+--- field fill rates (share of NaN/fill) ---
+  h_te_median        fill:    6.6 %  (6,582)
+  h_te_uncertainty   fill:    6.6 %  (6,582)
+  n_te_photons       fill:    0.0 %  (0)
+  layer_flag         fill:    0.0 %  (0)
+  cloud_flag_atm     fill:    0.0 %  (0)
+  sat_flag           fill:    0.0 %  (0)
+  terrain_flg        fill:    0.0 %  (0)
+  h20 any-valid            :   91.9 %  (92,015)
+
+--- individual filters (survivors) ---
+  h_te finite              :   93.4 %  (93,548)
+  h20 any finite           :   91.9 %  (92,015)
+  unc finite & <=1.5       :   48.3 %  (48,404)
+  unc <=2.5 (fill passes)  :   60.9 %  (60,966)
+  photons >=50 (strict)    :   52.3 %  (52,347)
+  photons >=20 (fill pass) :   79.8 %  (79,873)
+  layer_flag == 0          :    0.0 %  (0)
+  cloud_flag_atm <= 1      :   91.1 %  (91,233)
+  sat_flag == 0            :   98.8 %  (98,969)
+  terrain_flg == 0         :   57.6 %  (57,645)
+
+--- combined masks ---
+  OLD (strict)             :    0.0 %  (0)
+  NEW (relaxed, no tflg)   :    0.0 %  (0)
+
+  !! identical survivors -> the script you run is likely NOT the edited one

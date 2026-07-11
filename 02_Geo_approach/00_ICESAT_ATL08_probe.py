@@ -20,7 +20,7 @@ import numpy as np
 import h5py
 
 # ============================================================
-GRANULE = r"C:\Computation\data\atl08_PL\ATL08_xxxxxxxx.h5"   # <- one file
+GRANULE = r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sat_lidar\01_data\ICE_SAT\ATL08\ATL08_20251019002542_05262906_007_01.h5"   # <- one file
 BEAMS = ["gt1l", "gt1r", "gt2l", "gt2r", "gt3l", "gt3r"]
 FILL_ABS = 1e30
 # ============================================================
