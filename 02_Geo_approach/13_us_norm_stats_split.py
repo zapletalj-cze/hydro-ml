@@ -36,9 +36,9 @@ from tqdm import tqdm
 # CONFIG
 # ============================================================
 
-US_PATCHES_DIR  = Path(r"D:\...\patches_US\patches")
-US_METADATA_CSV = Path(r"D:\...\patches_US\patches_metadata.csv")
-OUTPUT_DIR      = Path(r"D:\...\patches_US\us_eval_prep")
+US_PATCHES_DIR  = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\patches\patches_PL_test\patches")
+US_METADATA_CSV = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\patches\patches_PL_test\patches_metadata.csv")
+OUTPUT_DIR      = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\patches\patches_PL_test\patches\eval_prep")
 
 INPUT_CHANNELS = ["dsm", "tpi_r5", "tpi_r10", "tpi_r15",
                   "canopy_height", "canopy_height_sd", "water"]

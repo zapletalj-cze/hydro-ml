@@ -63,18 +63,24 @@ import time
 # ============================================================
 
 # ------- Paths ----------------------------------------------
-# Single training basin (basin A from the patch generator). The held-out basin
-# is evaluated by evaluate_segformer.py, not here.
-PATCHES_DIR = Path(
+# Two training sources combined; the held-out basin is evaluated separately
+# by evaluate_segformer.py.
+PATCHES_DIR_USA = Path(
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\patches_v02_USA\patches"
+)
+PATCHES_DIR_PL = Path(
     r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\patches\patches_PL_train\patches"
 )
-METADATA_CSV = Path(
+METADATA_CSV_USA = Path(
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\patches_v02_USA\patches_metadata.csv"
+)
+METADATA_CSV_PL = Path(
     r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\patches\patches_PL_train\patches_metadata.csv"
 )
 
 # Output dir - MUST be unique per variant
 OUTPUT_DIR = Path(
-    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\training_v05_segformer"
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\training_v06_segformer_PL_US"
 )
 IMG_DIR = OUTPUT_DIR / "img"
 
@@ -114,7 +120,7 @@ VAL_FRAC = 0.25
 
 # ------- Training hyperparameters ---------------------------
 BATCH_SIZE = 16
-N_EPOCHS = 100
+N_EPOCHS = 150
 LR = 1e-4
 WEIGHT_DECAY = 1e-3
 GRAD_CLIP = 1.0
@@ -122,7 +128,7 @@ MIXED_PRECISION = True
 
 
 # ------- Loss function --------------------------------------
-LOSS_DICE_WEIGHT = 0.5
+LOSS_DICE_WEIGHT = 0.25
 CLDICE_ITER = 5
 BCE_POS_WEIGHT = 20.0
 
@@ -201,10 +207,10 @@ class LeveeDataset(Dataset):
     """
 
     def __init__(
-        self, metadata_df, patches_root_dir, input_channels, norm_stats, augment=False
+        self, metadata_df, patches_root_dirs, input_channels, norm_stats, augment=False
     ):
         self.metadata = metadata_df.reset_index(drop=True)
-        self.patches_root_dir = patches_root_dir
+        self.patches_root_dirs = patches_root_dirs
         self.input_channels = input_channels
         self.norm_stats = norm_stats
         self.augment = augment
@@ -213,7 +219,8 @@ class LeveeDataset(Dataset):
         return len(self.metadata)
 
     def _load_npz(self, row):
-        npz_path = self.patches_root_dir / f"{row['patch_id']}.npz"
+        region = row["region"]
+        npz_path = self.patches_root_dirs[region] / f"{row['patch_id']}.npz"
         return dict(np.load(npz_path))
 
     def _normalize(self, channels):
@@ -456,8 +463,12 @@ def build_model():
 
 
 def load_and_split_metadata():
-    """Load the training-basin metadata and build a reach-grouped train/val split."""
-    df = pd.read_csv(METADATA_CSV)
+    """Load USA+PL metadata, build region+comid-grouped train/val split."""
+    df_usa = pd.read_csv(METADATA_CSV_USA)
+    df_usa["region"] = "USA"
+    df_pl = pd.read_csv(METADATA_CSV_PL)
+    df_pl["region"] = "PL"
+    df = pd.concat([df_usa, df_pl], ignore_index=True)
 
     df["comid"] = pd.to_numeric(df["comid"], errors="coerce")
     n_missing = int(df["comid"].isna().sum())
@@ -467,8 +478,10 @@ def load_and_split_metadata():
         )
         df = df[df["comid"].notna()].copy()
     df["comid"] = df["comid"].astype(int)
+    # Prefix comid with region to avoid collisions between datasets
+    df["comid_global"] = df["region"] + "_" + df["comid"].astype(str)
 
-    unique_sources = df[SPLIT_BY].unique()
+    unique_sources = df["comid_global"].unique()
     rng = np.random.default_rng(SEED)
     rng.shuffle(unique_sources)
 
@@ -476,14 +489,13 @@ def load_and_split_metadata():
     n_train = int(n_total * TRAIN_FRAC)
 
     train_sources = set(unique_sources[:n_train])
-    val_sources = set(unique_sources[n_train:])
 
-    df["split"] = df[SPLIT_BY].apply(lambda s: "train" if s in train_sources else "val")
+    df["split"] = df["comid_global"].apply(lambda s: "train" if s in train_sources else "val")
 
     df_train = df[df["split"] == "train"].reset_index(drop=True)
     df_val = df[df["split"] == "val"].reset_index(drop=True)
 
-    logging.info(f"Total patches: {len(df)}  (reaches: {n_total})")
+    logging.info(f"Total patches: {len(df)}  (comid groups: {n_total})")
     logging.info(f"  Train: {len(df_train)} ({len(df_train)/len(df)*100:.1f}%)")
     logging.info(f"  Val:   {len(df_val)} ({len(df_val)/len(df)*100:.1f}%)")
 
@@ -512,10 +524,11 @@ def compute_or_load_norm_stats(df_train):
     sq_sums = {c: 0.0 for c in channels_to_normalize}
     counts = {c: 0 for c in channels_to_normalize}
 
+    patches_root_dirs = {"USA": PATCHES_DIR_USA, "PL": PATCHES_DIR_PL}
     for _, row in tqdm(
         df_train.iterrows(), total=len(df_train), desc="Computing norm stats"
     ):
-        npz_path = PATCHES_DIR / f"{row['patch_id']}.npz"
+        npz_path = patches_root_dirs[row["region"]] / f"{row['patch_id']}.npz"
         channels = dict(np.load(npz_path))
         for c in channels_to_normalize:
             arr = np.nan_to_num(channels[c].astype(np.float64))
@@ -545,11 +558,12 @@ def compute_or_load_norm_stats(df_train):
 
 
 def build_dataloaders(df_train, df_val, norm_stats):
+    patches_root_dirs = {"USA": PATCHES_DIR_USA, "PL": PATCHES_DIR_PL}
     train_ds = LeveeDataset(
-        df_train, PATCHES_DIR, INPUT_CHANNELS, norm_stats, augment=True
+        df_train, patches_root_dirs, INPUT_CHANNELS, norm_stats, augment=True
     )
     val_ds = LeveeDataset(
-        df_val, PATCHES_DIR, INPUT_CHANNELS, norm_stats, augment=False
+        df_val, patches_root_dirs, INPUT_CHANNELS, norm_stats, augment=False
     )
 
     train_loader = DataLoader(
@@ -571,25 +585,29 @@ def build_dataloaders(df_train, df_val, norm_stats):
         persistent_workers=(NUM_WORKERS > 0),
         prefetch_factor=4 if NUM_WORKERS > 0 else None,
     )
-    return train_loader, val_loader
+    return train_loader, val_loader, patches_root_dirs
 
 
-def select_positive_patch_ids(df_split, n_required, split_name):
+def select_positive_patch_ids(df_split, n_required, split_name, patches_root_dirs):
     """Select deterministic positive patch_ids by validating label pixels in NPZ files."""
     rng = np.random.default_rng(SEED + (0 if split_name == "train" else 10_000))
-    patch_ids = df_split["patch_id"].astype(str).tolist()
-    rng.shuffle(patch_ids)
+    df_shuffled = df_split.sample(
+        frac=1, random_state=int(rng.integers(2**31))
+    ).reset_index(drop=True)
 
     selected = []
-    for pid in patch_ids:
-        npz_path = PATCHES_DIR / f"{pid}.npz"
+    for _, row in df_shuffled.iterrows():
+        pid = str(row["patch_id"])
+        npz_path = patches_root_dirs[row["region"]] / f"{pid}.npz"
         if not npz_path.exists():
             continue
 
         channels = dict(np.load(npz_path))
         label = np.nan_to_num(channels[LABEL_CHANNEL].astype(np.float32), nan=0.0)
         if float(label.sum()) > 0:
-            selected.append(pid)
+            selected.append(
+                {"patch_id": pid, "patches_root": str(patches_root_dirs[row["region"]])}
+            )
             if len(selected) == n_required:
                 break
 
@@ -600,26 +618,32 @@ def select_positive_patch_ids(df_split, n_required, split_name):
     return selected
 
 
-def build_fixed_locations(df_train, df_val):
+def build_fixed_locations(df_train, df_val, patches_root_dirs):
     """Create 6 fixed monitoring locations: 3 train + 3 val, all positive."""
-    train_ids = select_positive_patch_ids(df_train, n_required=3, split_name="train")
-    val_ids = select_positive_patch_ids(df_val, n_required=3, split_name="val")
+    train_entries = select_positive_patch_ids(
+        df_train, n_required=3, split_name="train", patches_root_dirs=patches_root_dirs
+    )
+    val_entries = select_positive_patch_ids(
+        df_val, n_required=3, split_name="val", patches_root_dirs=patches_root_dirs
+    )
 
     fixed_locations = []
-    for i, pid in enumerate(train_ids, start=1):
+    for i, entry in enumerate(train_entries, start=1):
         fixed_locations.append(
             {
                 "name": f"loc_{i:02d}_train",
                 "split": "train",
-                "patch_id": pid,
+                "patch_id": entry["patch_id"],
+                "patches_root": entry["patches_root"],
             }
         )
-    for i, pid in enumerate(val_ids, start=4):
+    for i, entry in enumerate(val_entries, start=4):
         fixed_locations.append(
             {
                 "name": f"loc_{i:02d}_val",
                 "split": "val",
-                "patch_id": pid,
+                "patch_id": entry["patch_id"],
+                "patches_root": entry["patches_root"],
             }
         )
     return fixed_locations
@@ -642,7 +666,7 @@ def _normalize_channels_for_inference(channels, norm_stats):
     return out
 
 
-def save_fixed_location_images(model, norm_stats, fixed_locations, epoch, out_dir):
+def save_fixed_location_images(model, norm_stats, fixed_locations, epoch, out_dir, patches_root_dirs):
     """Save per-epoch prediction visuals for fixed train/val locations."""
     model.eval()
     with torch.no_grad():
@@ -652,7 +676,7 @@ def save_fixed_location_images(model, norm_stats, fixed_locations, epoch, out_di
             loc_dir = out_dir / loc["name"]
             loc_dir.mkdir(parents=True, exist_ok=True)
 
-            npz_path = PATCHES_DIR / f"{patch_id}.npz"
+            npz_path = Path(loc["patches_root"]) / f"{patch_id}.npz"
             channels = dict(np.load(npz_path))
             channels_norm = _normalize_channels_for_inference(channels, norm_stats)
 
@@ -791,7 +815,7 @@ def save_epoch_dashboard(history, epoch, preview_batch, out_dir, is_best=False):
 # ============================================================
 
 
-def train(model, train_loader, val_loader, norm_stats, fixed_locations):
+def train(model, train_loader, val_loader, norm_stats, fixed_locations, patches_root_dirs):
     optimizer = AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
     scheduler = CosineAnnealingLR(optimizer, T_max=N_EPOCHS, eta_min=LR * 0.01)
     scaler = torch.amp.GradScaler(device="cuda", enabled=MIXED_PRECISION)
@@ -930,6 +954,7 @@ def train(model, train_loader, val_loader, norm_stats, fixed_locations):
             fixed_locations=fixed_locations,
             epoch=epoch + 1,
             out_dir=IMG_DIR,
+            patches_root_dirs=patches_root_dirs,
         )
 
     pd.DataFrame(history).to_csv(OUTPUT_DIR / "training_history.csv", index=False)
@@ -1096,7 +1121,7 @@ def save_final_summary_graph(history, out_dir):
 # ============================================================
 
 
-def evaluate_split(model, df_split, split_name, norm_stats):
+def evaluate_split(model, df_split, split_name, norm_stats, patches_root_dirs):
     """
     Evaluate model on a split, save per-patch predictions, return metrics df.
     Per-patch metrics: dice, iou, cldice, tp/fp/fn/tn, precision, recall, f1.
@@ -1105,7 +1130,7 @@ def evaluate_split(model, df_split, split_name, norm_stats):
     if SAVE_PREDICTIONS:
         pred_dir.mkdir(exist_ok=True)
 
-    ds = LeveeDataset(df_split, PATCHES_DIR, INPUT_CHANNELS, norm_stats, augment=False)
+    ds = LeveeDataset(df_split, patches_root_dirs, INPUT_CHANNELS, norm_stats, augment=False)
     loader = DataLoader(
         ds,
         batch_size=BATCH_SIZE,
@@ -1174,7 +1199,7 @@ def evaluate_split(model, df_split, split_name, norm_stats):
 
     df_results = pd.DataFrame(records)
     df_results = df_results.merge(
-        df_split[["patch_id", "patch_type"]],
+        df_split[["patch_id", "region", "patch_type"]],
         on="patch_id",
         how="left",
     )
@@ -1268,10 +1293,12 @@ def main():
     norm_stats = compute_or_load_norm_stats(df_train)
 
     # 3. Build dataloaders
-    train_loader, val_loader = build_dataloaders(df_train, df_val, norm_stats)
+    train_loader, val_loader, patches_root_dirs = build_dataloaders(
+        df_train, df_val, norm_stats
+    )
 
     # 3b. Fixed monitoring locations (always positive): 3 train + 3 val
-    fixed_locations = build_fixed_locations(df_train, df_val)
+    fixed_locations = build_fixed_locations(df_train, df_val, patches_root_dirs)
     for loc in fixed_locations:
         log.info(f"Fixed location: {loc['name']} -> patch_id={loc['patch_id']} ({loc['split']})")
 
@@ -1286,6 +1313,7 @@ def main():
         val_loader,
         norm_stats,
         fixed_locations,
+        patches_root_dirs,
     )
 
     # 6. Plot curves
@@ -1304,7 +1332,7 @@ def main():
         f"val_cldice={checkpoint.get('val_cldice', float('nan')):.4f}"
     )
 
-    val_results = evaluate_split(model, df_val, "val", norm_stats)
+    val_results = evaluate_split(model, df_val, "val", norm_stats, patches_root_dirs)
     val_results.to_csv(OUTPUT_DIR / "val_results_per_patch.csv", index=False)
     report_metrics(val_results, "val")
 

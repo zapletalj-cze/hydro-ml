@@ -47,36 +47,39 @@ from osgeo import gdal, ogr, osr, gdalconst
 
 gdal.UseExceptions()
 
-import patch_io  # shared read_window + compute_tpi + patch_geotransform
+import importlib
+patch_io = importlib.import_module("01b_patch_io")  # shared read_window + compute_tpi + patch_geotransform
 
 # ============================================================
 # CONFIG
 # ============================================================
 
 # ------- Input paths ----------------------------------------
-BDOT_GPKG = r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\levees_selection\WalyNaspy.gpkg"
-MERIT_GPKG = r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\data\riv_pfaf_2x_MERIT_Hydro_v07_Basin_flip.gpkg"
-COPDEM_TIFF = r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\COP_DSM\COP_DSM_Poland_2180_c.tif"
-CANOPY_HEIGHT_TIFF = r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\data\CanopyHeight\Poland\reprojected\ETH_GlobalCanopyHeight_10m_2020_Poland_Map_2180.tif"
-CANOPY_HEIGHT_SD_TIFF = r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\data\CanopyHeight\Poland\reprojected\ETH_GlobalCanopyHeight_10m_2020_Poland_Map_SD_2180.tif"
+BDOT_GPKG = r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\data\CanopyHeight\USA\levees\National_Levee_Database.gpkg"
+MERIT_GPKG = r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\data\riv_pfaf_7x_MERIT_Hydro_v07_Basin_flip_USA_SELECT.gpkg"
+COPDEM_TIFF = r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\COP_DSM\Copernicus_DSM_USA_10m.tif"
+CANOPY_HEIGHT_TIFF = r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\data\CanopyHeight\USA\canopy_height\height\ETH_GlobalCanopyHeight_10m_USA.tif"
+CANOPY_HEIGHT_SD_TIFF = r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\data\CanopyHeight\USA\canopy_height\sd\ETH_GlobalCanopyHeight_10m_SD.tif"
 # Binary water mask produced by prepare_water_mask.py (same grid as the DSM).
-WATER_TIFF = r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\source\pl\water_mask_pl.tif"
+WATER_TIFF = r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\water_mask\water_mask_usa.tif"
+
+AOI_PATH = Path(
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\data\CanopyHeight\USA\AOI_US.gpkg"
+)
 
 OUTPUT_DIR = Path(
-    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\patches_v02_PL"
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\patches_v02_USA"
 )
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # ------- Spatial reference ----------------------------------
-TARGET_CRS = "EPSG:2180"  # PUWG 1992
-TARGET_EPSG = 2180
-POLAND_BBOX_WGS84 = (
-    14.0,
-    49.0,
-    24.2,
-    55.0,
-)  # MERIT is read in its native CRS (WGS84) then reprojected
+TARGET_CRS = "EPSG:5070"  # NAD83 / Conus Albers
+TARGET_EPSG = 5070
+# Bounding box derived from AOI reprojected to WGS84; used to clip MERIT reaches.
+USA_BBOX_WGS84 = tuple(
+    gpd.read_file(AOI_PATH).to_crs("EPSG:4326").total_bounds[[0, 1, 2, 3]]
+)  # (minx, miny, maxx, maxy)
 
 
 # ------- MERIT reach attribute columns ----------------------
@@ -97,7 +100,7 @@ MAX_DIST_TO_REACH_M = (
 # ------- Geographic hold-out (by drainage basin) ------------
 # First run with REPORT_BASINS_ONLY = True to print the basin table, then set
 # TRAIN_BASINS to the outlet COMIDs you want for TRAINING (rest of PL = test).
-REPORT_BASINS_ONLY = True
+REPORT_BASINS_ONLY = False
 TRAIN_BASINS = None  # e.g. [12345, 67890]; None = keep all basins
 
 
@@ -272,7 +275,6 @@ def trace_basins(gdf_reaches):
         for c in path:
             basin_of[c] = outlet
     return basin_of
-
 
 def basin_outlet_locations(gdf_reaches, basin_ids):
     """Approximate outlet location (representative point) per basin, for the report."""
@@ -627,7 +629,7 @@ def main():
 
     # Section 2: load inputs (vectors)
     gdf_levees = load_bdot_levees(BDOT_GPKG, TARGET_CRS)
-    gdf_reaches = load_merit_reaches(MERIT_GPKG, POLAND_BBOX_WGS84, TARGET_CRS)
+    gdf_reaches = load_merit_reaches(MERIT_GPKG, None, TARGET_CRS)
 
     # Section 3-4: segment + attach nearest reach
     gdf_segments = segment_levees(gdf_levees, SEGMENT_LENGTH_M, MIN_LEVEE_LENGTH_M)

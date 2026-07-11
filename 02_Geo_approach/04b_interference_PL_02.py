@@ -60,35 +60,35 @@ from tqdm import tqdm
 
 # --- User-provided paths ---
 AOI_PATH = Path(
-    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\AOI_Poland.gpkg"
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\data\CanopyHeight\Czechia\AOI_CZE.gpkg"
 )
 DSM_PATH = Path(
-    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\COP_DSM\COP_DSM_Poland_2180_c_10m.tif"
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\data\CanopyHeight\Czechia\DSM_COP_30_Czechia.tif"
 )
 CANOPY_PATH = Path(
-    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\data\CanopyHeight\Poland\reprojected\ETH_GlobalCanopyHeight_10m_2020_Poland_Map_2180.tif"
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\data\CanopyHeight\Czechia\ETH_CanopyHeight_10m_Czechia.tif"
 )
 CANOPY_SD_PATH = Path(
-    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\data\CanopyHeight\Poland\reprojected\ETH_GlobalCanopyHeight_10m_2020_Poland_Map_SD_2180.tif"
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\data\CanopyHeight\Czechia\ETH_CanopyHeight_10m_Czechia_SD.tif"
 )
 WATER_PATH = Path(
-    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\water_mask\water_mask_pl.tif"
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\data\CanopyHeight\Czechia\Watebodies_raster_CZE_10m.tif"
 )
 
 MERIT_PATH = Path(
-    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\data\riv_pfaf_2x_MERIT_Hydro_v07_Basin_flip_2180.gpkg"
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\data\CanopyHeight\Czechia\MERIT_5514_EU.gpkg"
 )
 MERIT_UPAREA_COL = "uparea"
 
 CHECKPOINT_PATH = Path(
-    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\training_v05_segformer\best_model.pt"
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\training_v06_segformer_PL_US\best_model.pt"
 )
 NORM_STATS_PATH = Path(
-    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\training_v05_segformer\norm_stats.json"
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\training_v06_segformer_PL_US\norm_stats.json"
 )
 
 OUTPUT_GPKG = Path(
-    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\training_v05_segformer\predicted\levees_predicted_Odra.gpkg"
+    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\training_v06_segformer_PL_US\predictioons_cze\levees_predicted_CZE_Morava.gpkg"
 )
 
 # Probability raster output (intermediate result, used by ensemble script).
@@ -97,7 +97,7 @@ OUTPUT_PROB_TIF = OUTPUT_GPKG.with_name(OUTPUT_GPKG.stem + "_prob.tif")
 OUTPUT_PATCH_GRID = OUTPUT_GPKG.with_name(OUTPUT_GPKG.stem + "_patch_grid.gpkg")
 
 # --- Geographic & raster constants (must match training) ---
-CRS_TARGET = 2180  # EPSG:2180 (ETRS89 / Poland CS2000 zone 5)
+CRS_TARGET = 5514  # EPSG:2180 (ETRS89 / Poland CS2000 zone 5)
 PATCH_SIZE_PX = 256
 PATCH_RES_M = 10
 PATCH_EXTENT_M = PATCH_SIZE_PX * PATCH_RES_M  # 2560 m

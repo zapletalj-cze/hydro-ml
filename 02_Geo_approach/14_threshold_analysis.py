@@ -47,11 +47,11 @@ from tqdm import tqdm
 # CONFIG
 # ============================================================
 
-PREDICTIONS_DIR = Path(r"D:\...\training_v05_segformer\eval_us_calib_usstats_t050\predictions_us_calib")
-PATCHES_DIR     = Path(r"D:\...\patches_US\patches")
-METADATA_CSV    = Path(r"D:\...\us_eval_prep\metadata_us_calib.csv")
+PREDICTIONS_DIR = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\training_v06_segformer_PL_US\eval_basin_Odra\predictions_basin_B")
+PATCHES_DIR     = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\patches\patches_PL_test\patches")
+METADATA_CSV    = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\patches\patches_PL_test\patches\eval_prep\metadata_odra_calib.csv")
 
-OUTPUT_DIR = Path(r"D:\...\us_eval_prep\threshold_analysis")
+OUTPUT_DIR = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\patches\patches_PL_test\patches\eval_prep\threshold_analysis")
 
 LABEL_CHANNEL = "label"
 
@@ -165,17 +165,27 @@ def fig_threshold(thresholds, p, r, f1, iou, dice, best_i, out_path):
     ax = axes[0]
     ax.plot(r, p, color=C_DICE, lw=2.2, marker="o", markersize=3.5,
             markerfacecolor="white", markeredgecolor=C_DICE)
-    for i, label, color in ((ref_i, f"práh {REFERENCE_THRESHOLD}", SECOND),
-                            (best_i, f"práh {thresholds[best_i]:.2f} (opt.)", C_F1)):
+    # Separate offsets so the two markers (which sit close together) don't overlap.
+    for i, label, color, xytext, ha, va in (
+        (ref_i, f"práh {REFERENCE_THRESHOLD}", SECOND, (0, -14), "center", "top"),
+        (best_i, f"práh {thresholds[best_i]:.2f} (opt.)", C_F1, (0, 12), "center", "bottom"),
+    ):
         ax.scatter([r[i]], [p[i]], s=60, zorder=5, color=color)
         ax.annotate(label, (r[i], p[i]), textcoords="offset points",
-                    xytext=(8, -12), fontsize=9.5, color=color)
+                    xytext=xytext, ha=ha, va=va, fontsize=9.5, color=color)
     ax.set_xlabel("Recall"); ax.set_ylabel("Precision")
-    ax.set_xlim(0, 1); ax.set_ylim(0, 1)
-    ax.xaxis.set_major_locator(MultipleLocator(0.2))
-    ax.yaxis.set_major_locator(MultipleLocator(0.2))
+    # Auto-zoom to the data range (with margins) so the curve fills the panel
+    # instead of being squeezed into a corner of a fixed 0-1 box.
+    rmin, rmax = float(np.min(r)), float(np.max(r))
+    pmin, pmax = float(np.min(p)), float(np.max(p))
+    rpad = max(0.05, 0.15 * (rmax - rmin))
+    ppad = max(0.05, 0.15 * (pmax - pmin))
+    ax.set_xlim(max(0.0, rmin - rpad), min(1.0, rmax + rpad))
+    ax.set_ylim(max(0.0, pmin - ppad), min(1.0, pmax + ppad))
+    ax.xaxis.set_major_locator(MultipleLocator(0.05))
+    ax.yaxis.set_major_locator(MultipleLocator(0.05))
     ax.set_title("Křivka precision–recall")
-    ax.grid(axis="x", color=GRIDCOL, linewidth=0.8)
+    ax.grid(axis="both", color=GRIDCOL, linewidth=0.8)
     _tidy(ax)
 
     # metrics vs threshold

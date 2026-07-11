@@ -53,22 +53,22 @@ import segmentation_models_pytorch as smp
 TRAIN_OUTPUT_DIR = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\training_v05_segformer")
 
 # Patch set to evaluate (basin B, or US calib / US report subset)
-TEST_PATCHES_DIR  = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\patches\patches_PL_test\patches")
-TEST_METADATA_CSV = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\patches\patches_PL_test\patches_metadata.csv")
+TEST_PATCHES_DIR  = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\patches_v02_USA\patches")
+TEST_METADATA_CSV = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\patches_v02_USA\patches_metadata.csv")
 
 # ------- Transfer-fair evaluation ----------------------------
 # Normalization statistics. None -> TRAIN_OUTPUT_DIR/norm_stats.json.
 # For the adapted-input US evaluation set this to the norm_stats_US.json
 # written by 13_us_norm_stats_split.py (computed on the US CALIB subset).
-NORM_STATS_JSON = None            # e.g. Path(r"D:\...\us_eval_prep\norm_stats_US.json")
+NORM_STATS_JSON = r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\patches_v02_USA\eval_prep\norm_stats_US.json"            # e.g. Path(r"D:\...\us_eval_prep\norm_stats_US.json")
 
 # Decision threshold on the sigmoid probability (was hardcoded 0.5).
 THRESHOLD = 0.5
 
 # Name of the evaluated set and variant tag; together they define the output
 # dir, so no two variants can overwrite each other.
-SPLIT_NAME  = "basin_B"           # e.g. "us_calib", "us_report"
-VARIANT_TAG = "plstats_t050"      # e.g. "usstats_t050", "usstats_topt"
+SPLIT_NAME  = "us_calib"           # e.g. "us_calib", "us_report"
+VARIANT_TAG = "usstats_t050"      # e.g. "usstats_t050", "usstats_topt"
 
 EVAL_OUTPUT_DIR = TRAIN_OUTPUT_DIR / f"eval_{SPLIT_NAME}_{VARIANT_TAG}"
 
