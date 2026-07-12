@@ -61,11 +61,11 @@ from shapely.strtree import STRtree
 # CONFIG
 # ============================================================
 
-DETECTED_LEVEES_GPKG = Path(r"D:\...\interference_outputs\detected_levees.gpkg")
-CREST_POINTS_GPKG    = Path(r"D:\...\atl08_terrain_heights_crest.gpkg")  # from 00 script
-DSM_TIF              = Path(r"D:\...\COP_DSM_10m_2180.tif")              # EGM2008, EPSG:2180
+DETECTED_LEVEES_GPKG = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\training_v06_segformer_PL_US\predictions_eval\levees_predicted_Odra.gpkg")
+CREST_POINTS_GPKG    = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sat_lidar\01_data\ICE_SAT\ATL08\atl08_terrain_heights_updated_crest.gpkg")  # from 00 script
+DSM_TIF              = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\COP_DSM\COP_DSM_Poland_2180_c_10m.tif")              # EGM2008, EPSG:2180
 
-OUTPUT_GPKG = Path(r"D:\...\levee_segments_z.gpkg")
+OUTPUT_GPKG = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sat_lidar\01_data\ICE_SAT\ATL08\processing\levee_segments_z.gpkg")  # segments with z, dz_used, method, dsm_med, n_pts
 
 CRS_METRIC = 2180
 
@@ -210,6 +210,8 @@ def make_dsm_sampler(dsm_path, expect_epsg=CRS_METRIC):
         if wsum <= 0:
             return float("nan")
         return float((block[ok] * w[ok]).sum() / wsum)
+
+    sample._ds = ds  # keep the GDAL dataset alive (else band handle is freed)
     return sample
 
 
