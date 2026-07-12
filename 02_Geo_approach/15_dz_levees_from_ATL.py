@@ -17,6 +17,14 @@ Height semantics (important):
       already contains the smoothed levee, so adding prominence would count the
       levee twice and overestimate the crest.
 
+Point filters before aggregation:
+    dz > DZ_MAX   bridge decks and similar structures (verified visually)
+    dz < DZ_MIN   ATL08 ground under vegetation vs DSM canopy top; a crest
+                  point cannot sit below the SURFACE model (datum verified OK
+                  on bare surfaces), so such points are not crests
+    optional canopy raster filter (CANOPY_TIF): drop points under vegetation
+                  taller than CANOPY_MAX_M regardless of dz
+
 Aggregation: median as the main estimate (the hydraulically relevant weak spot
 is the LOW point, so a high percentile would overstate protection); a
 conservative 20th-percentile variant is written alongside (z_cons) for a
@@ -31,6 +39,8 @@ Outputs (OUTPUT_GPKG + siblings):
     levee_segments_z.gpkg      segments with: levee_id, seg_id, length_m,
                                n_pts, method, dz_used, dsm_med, z, z_cons
     levee_segments_summary.csv share of levee length per method + dz stats
+    fig_crest_points_diagnostics.png  dz distribution + distance vs dz,
+                               removal reasons highlighted
     profiles/*.png             QA crest profiles for the longest levees
 
 Builder hookup: every segment carries 'z', so in 11_build_sfincs_models.py the
@@ -78,7 +88,18 @@ DZ_DEFAULT         = 2.0     # global fallback [m]
 DZ_MAX             = 8.0     # cap on dz over DSM [m]: points above are bridge
                              # decks and similar structures, not levee crests
                              # (verified visually on the tallest candidates)
+DZ_MIN             = -0.3    # lower tolerance [m]: a crest point cannot sit
+                             # below the SURFACE model; more negative dz means
+                             # ATL08 ground under vegetation vs DSM canopy top
+                             # (datum verified OK on bare surfaces), so such
+                             # points are dropped from the dz sample
 CONSERVATIVE_PCT   = 20      # percentile for the conservative variant
+
+# Optional canopy filter: sample the canopy-height raster at each point and
+# drop points under vegetation taller than CANOPY_MAX_M regardless of dz.
+# Set CANOPY_TIF = None to disable (the DZ_MIN tolerance then does the work).
+CANOPY_TIF   = None          # e.g. Path(r"D:\...\canopy_height_2180.tif")
+CANOPY_MAX_M = 2.0
 
 H_COLUMN = "h_te_ortho"      # crest elevation column on the points (EGM2008)
 
@@ -176,7 +197,7 @@ def resolve_segments(seg_table, pts_table, dz_default=DZ_DEFAULT,
 
 def make_dsm_sampler(dsm_path, expect_epsg=CRS_METRIC):
     """Windowed bilinear sampler f(x, y) -> elevation (NaN on nodata/outside).
-    Requires the DSM to be in the same metric CRS as the levees."""
+    Requires the raster to be in the same metric CRS as the levees."""
     from osgeo import gdal, osr
     gdal.UseExceptions()
     ds = gdal.Open(str(dsm_path))
@@ -184,7 +205,7 @@ def make_dsm_sampler(dsm_path, expect_epsg=CRS_METRIC):
     code = srs.GetAuthorityCode(None)
     if code is None or int(code) != int(expect_epsg):
         raise RuntimeError(
-            f"DSM CRS (EPSG:{code}) != EPSG:{expect_epsg}; reproject the DSM first.")
+            f"Raster CRS (EPSG:{code}) != EPSG:{expect_epsg}; reproject first.")
     band = ds.GetRasterBand(1)
     nodata = band.GetNoDataValue()
     inv_gt = gdal.InvGeoTransform(ds.GetGeoTransform())
@@ -229,25 +250,33 @@ def dsm_median_along(segment, sampler, step=DSM_SAMPLE_STEP_M):
 
 
 # ============================================================
-# QA PROFILE FIGURES
+# QA FIGURES
 # ============================================================
 
 INK, SECOND, GRID = "#1F2937", "#6B7280", "#E5E7EB"
 C_Z, C_DSM, C_PT = "#0E7C7B", "#6B7280", "#C2410C"
+C_LOW, C_VEG = "#2B6CB0", "#5B8C5A"
 METHOD_ALPHA = {"z_measured": 1.0, "dz_levee": 0.55, "dz_default": 0.30}
 
+REASON_STYLE = {
+    "kept":       (C_Z,   "ponecháno"),
+    "structure":  (C_PT,  "konstrukce (dz > strop)"),
+    "below_dsm":  (C_LOW, "pod DSM (vegetace/niva)"),
+    "vegetation": (C_VEG, "vegetace (rastr)"),
+}
 
-def diagnostics_figure(pts_all, dz_max, max_dist, out_path):
+
+def diagnostics_figure(pts_all, dz_min, dz_max, max_dist, out_path):
     """Three-panel QA/thesis figure over the assigned crest points:
-    (a) boxplot + histogram of dz over DSM, (b) distance-to-levee vs dz with
-    the DZ_MAX cap and capped points highlighted."""
-    ok = pts_all["dz"] <= dz_max
+    (a) boxplot of retained dz, (b) histogram of dz by removal reason with
+    median/limits, (c) distance-to-levee vs dz by removal reason."""
+    kept = pts_all["reason"] == "kept"
     fig, axes = plt.subplots(1, 3, figsize=(12.6, 3.8), dpi=200,
                              gridspec_kw={"width_ratios": [0.8, 1.4, 1.6]})
 
     # (a) boxplot of retained dz
     ax = axes[0]
-    bp = ax.boxplot([pts_all.loc[ok, "dz"].values], widths=0.5,
+    bp = ax.boxplot([pts_all.loc[kept, "dz"].values], widths=0.5,
                     patch_artist=True, showmeans=True,
                     flierprops=dict(marker="o", markersize=2.5,
                                     markerfacecolor=SECOND,
@@ -261,39 +290,44 @@ def diagnostics_figure(pts_all, dz_max, max_dist, out_path):
     bp["boxes"][0].set(facecolor=C_Z, alpha=0.20, edgecolor=C_Z, linewidth=1.5)
     ax.set_xticks([])
     ax.set_ylabel("dz nad DSM [m]", color=INK)
-    ax.set_title("Rozdělení dz", fontsize=10.5, color=INK)
+    ax.set_title("Rozdělení dz (ponecháno)", fontsize=10.5, color=INK)
 
-    # (b) histogram of dz with median and cap
+    # (b) histogram of dz by reason
     ax = axes[1]
     lo = float(np.floor(pts_all["dz"].min()))
     hi = float(np.ceil(pts_all["dz"].max()))
-    bins = np.linspace(lo, hi, 45)
-    ax.hist(pts_all.loc[ok, "dz"], bins=bins, color=C_Z, alpha=0.55,
-            edgecolor="none", label="ponecháno")
-    ax.hist(pts_all.loc[~ok, "dz"], bins=bins, color=C_PT, alpha=0.55,
-            edgecolor="none", label="nad stropem")
-    med = float(pts_all.loc[ok, "dz"].median())
+    bins = np.linspace(lo, hi, 50)
+    for reason, (color, label) in REASON_STYLE.items():
+        m = pts_all["reason"] == reason
+        if m.any():
+            ax.hist(pts_all.loc[m, "dz"], bins=bins, color=color, alpha=0.55,
+                    edgecolor="none", label=label)
+    med = float(pts_all.loc[kept, "dz"].median())
     ax.axvline(med, color=INK, lw=1.4, ls=(0, (5, 2)),
                label=f"medián {med:.2f} m")
-    ax.axvline(dz_max, color=C_PT, lw=1.2, ls=":",
-               label=f"strop {dz_max:.0f} m")
+    ax.axvline(dz_max, color=C_PT, lw=1.2, ls=":")
+    ax.axvline(dz_min, color=C_LOW, lw=1.2, ls=":")
     ax.set_xlabel("dz nad DSM [m]", color=INK)
     ax.set_ylabel("Počet bodů", color=INK)
     ax.set_title("Histogram dz", fontsize=10.5, color=INK)
-    ax.legend(frameon=False, fontsize=8)
+    ax.legend(frameon=False, fontsize=7.5)
 
-    # (c) distance to levee vs dz
+    # (c) distance to levee vs dz by reason
     ax = axes[2]
-    ax.scatter(pts_all.loc[ok, "dist_m"], pts_all.loc[ok, "dz"], s=8,
-               color=C_Z, alpha=0.45, edgecolors="none", label="ponecháno")
-    ax.scatter(pts_all.loc[~ok, "dist_m"], pts_all.loc[~ok, "dz"], s=10,
-               color=C_PT, alpha=0.8, edgecolors="none", label="nad stropem")
+    for reason, (color, label) in REASON_STYLE.items():
+        m = pts_all["reason"] == reason
+        if m.any():
+            ax.scatter(pts_all.loc[m, "dist_m"], pts_all.loc[m, "dz"],
+                       s=8 if reason == "kept" else 10, color=color,
+                       alpha=0.45 if reason == "kept" else 0.8,
+                       edgecolors="none", label=label)
     ax.axhline(dz_max, color=C_PT, lw=1.2, ls=":")
+    ax.axhline(dz_min, color=C_LOW, lw=1.2, ls=":")
     ax.set_xlim(0, max_dist)
     ax.set_xlabel("Vzdálenost od detekované hráze [m]", color=INK)
     ax.set_ylabel("dz nad DSM [m]", color=INK)
     ax.set_title("Vzdálenost od hráze vs dz", fontsize=10.5, color=INK)
-    ax.legend(frameon=False, fontsize=8)
+    ax.legend(frameon=False, fontsize=7.5)
 
     for ax in axes:
         ax.grid(color=GRID, lw=0.7)
@@ -415,23 +449,42 @@ def main():
     pts_table["chain"] = chain
     print(f"assigned points (<= {MAX_DIST_M:.0f} m, DSM ok): {len(pts_table)}")
 
-    # ---- cap: bridge decks etc. carry dz far above any real crest ----
+    # ---- point filters: structures above, vegetation below ----
     pts_all = pts_table.copy()                    # kept for diagnostics figure
+    pts_all["reason"] = "kept"
+
+    # optional canopy filter: drop points under tall vegetation regardless of dz
+    if CANOPY_TIF is not None:
+        canopy_sampler = make_dsm_sampler(CANOPY_TIF)
+        canopy_h = np.array([canopy_sampler(p.x, p.y)
+                             for p in pts.geometry[pts_table.index]])
+        veg = np.isfinite(canopy_h) & (canopy_h > CANOPY_MAX_M)
+        pts_all.loc[pts_table.index[veg], "reason"] = "vegetation"
+        pts_table = pts_table[~veg]
+        print(f"  removed {int(veg.sum())} points under vegetation "
+              f"> {CANOPY_MAX_M:.1f} m (canopy raster)")
+
     capped = pts_table["dz"] > DZ_MAX
-    n_capped = int(capped.sum())
-    pts_table = pts_table[~capped].reset_index(drop=True)
+    low = pts_table["dz"] < DZ_MIN
+    pts_all.loc[pts_table.index[capped], "reason"] = "structure"
+    pts_all.loc[pts_table.index[low], "reason"] = "below_dsm"
+    n_capped, n_low = int(capped.sum()), int(low.sum())
+    pts_table = pts_table[~capped & ~low].reset_index(drop=True)
     print(f"  removed {n_capped} points with dz > {DZ_MAX:.1f} m "
           f"(bridge decks / structures)")
+    print(f"  removed {n_low} points with dz < {DZ_MIN:.1f} m "
+          f"(ATL08 ground under canopy vs DSM top; not crest)")
     if len(pts_table):
-        print(f"  dz over DSM: median {pts_table['dz'].median():+.2f} m, "
+        print(f"  dz over DSM ({len(pts_table)} pts): "
+              f"median {pts_table['dz'].median():+.2f} m, "
               f"p20 {np.percentile(pts_table['dz'], 20):+.2f} m, "
               f"p80 {np.percentile(pts_table['dz'], 80):+.2f} m")
 
     # ---- resolve z per segment ----
     seg_table = resolve_segments(seg_table, pts_table)
 
-    # ---- diagnostics figure (all assigned points, cap highlighted) ----
-    diagnostics_figure(pts_all, DZ_MAX, MAX_DIST_M,
+    # ---- diagnostics figure (all assigned points, removal reasons) ----
+    diagnostics_figure(pts_all, DZ_MIN, DZ_MAX, MAX_DIST_M,
                        out_dir / "fig_crest_points_diagnostics.png")
     print(f"saved fig_crest_points_diagnostics.png")
 
