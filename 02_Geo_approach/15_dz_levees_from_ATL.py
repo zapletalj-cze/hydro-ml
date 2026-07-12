@@ -38,9 +38,9 @@ whole file goes through the Z_COLUMN="z" path (no dz call needed). For the
 conservative sensitivity run point Z_COLUMN at "z_cons".
 
 Dependencies: geopandas+pyogrio, shapely, GDAL, pandas, matplotlib.
+No rasterio, no fiona.
 
-
-Author:  Jakub Zapletal
+Author:  prepared for Jakub Zapletal
 """
 
 import warnings
@@ -61,8 +61,8 @@ from shapely.strtree import STRtree
 # CONFIG
 # ============================================================
 
-DETECTED_LEVEES_GPKG = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\training_v06_segformer_PL_US\predictions_eval\levees_predicted_Odra.gpkg")
-CREST_POINTS_GPKG    = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sat_lidar\01_data\ICE_SAT\ATL08\atl08_terrain_heights_new.gpkg")  # from 00 script
+DETECTED_LEVEES_GPKG = Path(r"D:\...\interference_outputs\detected_levees.gpkg")
+CREST_POINTS_GPKG    = Path(r"D:\...\atl08_terrain_heights_crest.gpkg")  # from 00 script
 DSM_TIF              = Path(r"D:\...\COP_DSM_10m_2180.tif")              # EGM2008, EPSG:2180
 
 OUTPUT_GPKG = Path(r"D:\...\levee_segments_z.gpkg")
@@ -75,6 +75,9 @@ MAX_DIST_M         = 30.0    # max point-to-segment distance for assignment
 MIN_POINTS_SEGMENT = 3       # measured-z requires at least this many points
 MIN_POINTS_LEVEE   = 3       # levee-level dz requires at least this many points
 DZ_DEFAULT         = 2.0     # global fallback [m]
+DZ_MAX             = 8.0     # cap on dz over DSM [m]: points above are bridge
+                             # decks and similar structures, not levee crests
+                             # (verified visually on the tallest candidates)
 CONSERVATIVE_PCT   = 20      # percentile for the conservative variant
 
 H_COLUMN = "h_te_ortho"      # crest elevation column on the points (EGM2008)
@@ -232,6 +235,76 @@ C_Z, C_DSM, C_PT = "#0E7C7B", "#6B7280", "#C2410C"
 METHOD_ALPHA = {"z_measured": 1.0, "dz_levee": 0.55, "dz_default": 0.30}
 
 
+def diagnostics_figure(pts_all, dz_max, max_dist, out_path):
+    """Three-panel QA/thesis figure over the assigned crest points:
+    (a) boxplot + histogram of dz over DSM, (b) distance-to-levee vs dz with
+    the DZ_MAX cap and capped points highlighted."""
+    ok = pts_all["dz"] <= dz_max
+    fig, axes = plt.subplots(1, 3, figsize=(12.6, 3.8), dpi=200,
+                             gridspec_kw={"width_ratios": [0.8, 1.4, 1.6]})
+
+    # (a) boxplot of retained dz
+    ax = axes[0]
+    bp = ax.boxplot([pts_all.loc[ok, "dz"].values], widths=0.5,
+                    patch_artist=True, showmeans=True,
+                    flierprops=dict(marker="o", markersize=2.5,
+                                    markerfacecolor=SECOND,
+                                    markeredgecolor="none", alpha=0.4),
+                    medianprops=dict(color=INK, linewidth=1.5),
+                    whiskerprops=dict(color=SECOND, linewidth=1.1),
+                    capprops=dict(color=SECOND, linewidth=1.1),
+                    meanprops=dict(marker="D", markersize=5,
+                                   markerfacecolor="white",
+                                   markeredgecolor=C_Z, markeredgewidth=1.3))
+    bp["boxes"][0].set(facecolor=C_Z, alpha=0.20, edgecolor=C_Z, linewidth=1.5)
+    ax.set_xticks([])
+    ax.set_ylabel("dz nad DSM [m]", color=INK)
+    ax.set_title("Rozdělení dz", fontsize=10.5, color=INK)
+
+    # (b) histogram of dz with median and cap
+    ax = axes[1]
+    lo = float(np.floor(pts_all["dz"].min()))
+    hi = float(np.ceil(pts_all["dz"].max()))
+    bins = np.linspace(lo, hi, 45)
+    ax.hist(pts_all.loc[ok, "dz"], bins=bins, color=C_Z, alpha=0.55,
+            edgecolor="none", label="ponecháno")
+    ax.hist(pts_all.loc[~ok, "dz"], bins=bins, color=C_PT, alpha=0.55,
+            edgecolor="none", label="nad stropem")
+    med = float(pts_all.loc[ok, "dz"].median())
+    ax.axvline(med, color=INK, lw=1.4, ls=(0, (5, 2)),
+               label=f"medián {med:.2f} m")
+    ax.axvline(dz_max, color=C_PT, lw=1.2, ls=":",
+               label=f"strop {dz_max:.0f} m")
+    ax.set_xlabel("dz nad DSM [m]", color=INK)
+    ax.set_ylabel("Počet bodů", color=INK)
+    ax.set_title("Histogram dz", fontsize=10.5, color=INK)
+    ax.legend(frameon=False, fontsize=8)
+
+    # (c) distance to levee vs dz
+    ax = axes[2]
+    ax.scatter(pts_all.loc[ok, "dist_m"], pts_all.loc[ok, "dz"], s=8,
+               color=C_Z, alpha=0.45, edgecolors="none", label="ponecháno")
+    ax.scatter(pts_all.loc[~ok, "dist_m"], pts_all.loc[~ok, "dz"], s=10,
+               color=C_PT, alpha=0.8, edgecolors="none", label="nad stropem")
+    ax.axhline(dz_max, color=C_PT, lw=1.2, ls=":")
+    ax.set_xlim(0, max_dist)
+    ax.set_xlabel("Vzdálenost od detekované hráze [m]", color=INK)
+    ax.set_ylabel("dz nad DSM [m]", color=INK)
+    ax.set_title("Vzdálenost od hráze vs dz", fontsize=10.5, color=INK)
+    ax.legend(frameon=False, fontsize=8)
+
+    for ax in axes:
+        ax.grid(color=GRID, lw=0.7)
+        for s in ("top", "right"):
+            ax.spines[s].set_visible(False)
+        ax.tick_params(colors=SECOND, length=0)
+    fig.suptitle("Korunní body ATL08 vůči DSM a detekovaným hrázím",
+                 y=1.02, fontsize=12, fontweight="semibold", color=INK)
+    fig.tight_layout()
+    fig.savefig(out_path)
+    plt.close(fig)
+
+
 def profile_figure(seg_levee, pts_levee, levee_id, out_path):
     """Crest profile of one levee: DSM along segments, resolved z per segment
     (opacity by method), measured points on top."""
@@ -328,6 +401,10 @@ def main():
     pts_table["dsm_at_pt"] = [sampler(p.x, p.y) for p in pts.geometry]
     pts_table = pts_table[np.isfinite(pts_table["dsm_at_pt"])]
     pts_table["dz"] = pts_table["h"] - pts_table["dsm_at_pt"]
+    # distance of each point to its assigned segment (diagnostics)
+    pts_table["dist_m"] = [seg_geoms[int(s)].distance(p)
+                           for s, p in zip(pts_table["seg_idx"],
+                                           pts.geometry[pts_table.index])]
     # chainage of each point along its levee, for the QA profiles
     chain = []
     for sidx, p in zip(pts_table["seg_idx"], pts.geometry[pts_table.index]):
@@ -335,6 +412,14 @@ def main():
         chain.append(r["chain0"] + seg_geoms[int(sidx)].project(p))
     pts_table["chain"] = chain
     print(f"assigned points (<= {MAX_DIST_M:.0f} m, DSM ok): {len(pts_table)}")
+
+    # ---- cap: bridge decks etc. carry dz far above any real crest ----
+    pts_all = pts_table.copy()                    # kept for diagnostics figure
+    capped = pts_table["dz"] > DZ_MAX
+    n_capped = int(capped.sum())
+    pts_table = pts_table[~capped].reset_index(drop=True)
+    print(f"  removed {n_capped} points with dz > {DZ_MAX:.1f} m "
+          f"(bridge decks / structures)")
     if len(pts_table):
         print(f"  dz over DSM: median {pts_table['dz'].median():+.2f} m, "
               f"p20 {np.percentile(pts_table['dz'], 20):+.2f} m, "
@@ -342,6 +427,11 @@ def main():
 
     # ---- resolve z per segment ----
     seg_table = resolve_segments(seg_table, pts_table)
+
+    # ---- diagnostics figure (all assigned points, cap highlighted) ----
+    diagnostics_figure(pts_all, DZ_MAX, MAX_DIST_M,
+                       out_dir / "fig_crest_points_diagnostics.png")
+    print(f"saved fig_crest_points_diagnostics.png")
 
     # ---- outputs ----
     gdf = gpd.GeoDataFrame(seg_table, geometry=seg_geoms,
