@@ -77,13 +77,13 @@ AOI_GPKG        = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detect
 DSM_TIF         = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\SFINCS_model\dtm\COP_DSM_10m_Wistula.tif")      # elevation, EGM2008, 10 m
 WORLDCOVER_TIF  = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\SFINCS_model\landuse\ESA_WorldCover_2021_2180_c.tif")   # ESA WorldCover classes
 DISCHARGE_GPKG  = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\SFINCS_model\bc_upstream\bc_upstream.gpkg")  # see format above
-LEVEES_GPKG     = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\SFINCS_model\levees\levee_segments_z.gpkg")  # detected levees (lines)
+LEVEES_GPKG     = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\SFINCS_model\levees\levee_segments_z.gpkg")  # levee segments with z (script 15)
 
 # Optional: polygon marking the downstream edge where water may leave the
 # domain (outflow). If None, the WHOLE edge of the active domain becomes
 # outflow (confirmed behaviour of mask.create_boundary without include_polygon),
 # which is acceptable for a valley reach but less controlled.
-OUTFLOW_GPKG    = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\SFINCS_model\bc_downstream\2d_bcdownstream.gpkg")   # e.g. Path(r"D:\path\to\outflow_zone.gpkg")
+OUTFLOW_GPKG    = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\SFINCS_model\bc_downstream\2d_bcdownstream.gpkg")
 
 # --- Output -------------------------------------------------
 OUT_ROOT = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\SFINCS_model\model_RP100")
@@ -94,8 +94,17 @@ RES_M    = 10.0
 
 # --- Levee crest --------------------------------------------
 Z_COLUMN   = "z"     # crest elevation column on the levee lines (EGM2008 metres)
-DZ_DEFAULT = 2.0     # fallback: crest = DSM + DZ_DEFAULT where z is missing
+DZ_DEFAULT = 0.9     # fallback: crest = DSM + DZ_DEFAULT where z is missing.
+                     # 0.9 m = median dz over DSM measured from the ATL08 crest
+                     # points after removing structures and vegetation, NOT an
+                     # arbitrary value. Normally unused: script 15 assigns z to
+                     # every segment, so the fallback path stays empty.
 WEIR_CD    = 0.6     # weir discharge coefficient (par1), SFINCS default
+
+# --- Rebuild control ----------------------------------------
+# True: a model whose sfincs.inp + sfincs.dep already exist is left untouched,
+# so a failed second model can be retried without rebuilding the first.
+SKIP_EXISTING = True
 
 # --- Steady-flow run ----------------------------------------
 SIM_HOURS   = 48                  # constant-Q run length; check steadiness
@@ -176,12 +185,33 @@ def constant_timeseries(gdf, tstart, hours):
 
 
 def prepare_levees(path):
-    """Load detected levees, ensure CRS, split by crest-z availability."""
+    """Load detected levees, clip to the model domain, split by crest-z availability."""
     gdf = gpd.read_file(path, engine="pyogrio")
     if gdf.crs is None:
         gdf.set_crs(epsg=CRS_EPSG, inplace=True)
     elif gdf.crs.to_epsg() != CRS_EPSG:
         gdf = gdf.to_crs(epsg=CRS_EPSG)
+
+    # Clip to the model domain FIRST. Segments outside it pass the len() guard
+    # but vanish inside hydromt's own masking, which then raises
+    # "GeoDataFrame has no data after masking". Clipping also avoids handing
+    # the builder thousands of segments the model will never see.
+    n_before = len(gdf)
+    domain = gpd.read_file(AOI_GPKG, engine="pyogrio")
+    if domain.crs is None:
+        domain.set_crs(epsg=CRS_EPSG, inplace=True)
+    elif domain.crs.to_epsg() != CRS_EPSG:
+        domain = domain.to_crs(epsg=CRS_EPSG)
+    gdf = gpd.clip(gdf, domain)
+    gdf = gdf[gdf.geometry.geom_type.isin(["LineString", "MultiLineString"])]
+    gdf = gdf.explode(index_parts=False).reset_index(drop=True)
+    gdf = gdf[gdf.geometry.length > 0].reset_index(drop=True)
+    print(f"  levees clipped to domain: {len(gdf)} of {n_before} segments "
+          f"({gdf.geometry.length.sum() / 1000:.1f} km)")
+    if len(gdf) == 0:
+        raise ValueError(
+            "No levee segments inside the model domain - check that the levee "
+            "file matches the modelled river (Wisla vs Odra)")
 
     if Z_COLUMN in gdf.columns:
         if Z_COLUMN != "z":
@@ -234,10 +264,22 @@ def run_model(root, exe_path):
 # MODEL BUILD
 # ============================================================
 
+def model_is_built(root):
+    """A model counts as built when sfincs.inp and the elevation grid exist."""
+    return (root / "sfincs.inp").exists() and (root / "sfincs.dep").exists()
+
+
 def build_model(root, with_levees, dis_gdf, dis_ts, levees_z, levees_noz, reclass_csv):
     """Build one SFINCS model with the v2 component API. Both variants share
     every call except the weirs block, so the levees are the only difference."""
-    print(f"\n=== building {'WITH levees' if with_levees else 'baseline'} -> {root}")
+    label = "WITH levees" if with_levees else "baseline"
+
+    if SKIP_EXISTING and model_is_built(root):
+        print(f"\n=== skipping {label} (already built) -> {root}")
+        print("    set SKIP_EXISTING = False to rebuild from scratch")
+        return None
+
+    print(f"\n=== building {label} -> {root}")
     root.mkdir(parents=True, exist_ok=True)
 
     sf = SfincsModel(root=str(root), mode="w", write_gis=True)
@@ -293,11 +335,15 @@ def build_model(root, with_levees, dis_gdf, dis_ts, levees_z, levees_noz, reclas
     if with_levees:
         if len(levees_z) > 0:
             # crest taken from the 'z' column (EGM2008, from ATL08 workflow)
+            print(f"  weirs from crest z: {len(levees_z)} segments")
             sf.weirs.create(locations=levees_z, par1=WEIR_CD)
         if len(levees_noz) > 0:
             # crest sampled from the DSM along the line, raised by DZ_DEFAULT
+            print(f"  weirs from DSM+{DZ_DEFAULT} m: {len(levees_noz)} segments")
             sf.weirs.create(locations=levees_noz, dep=str(DSM_TIF),
                             dz=DZ_DEFAULT, par1=WEIR_CD)
+        if len(levees_z) == 0 and len(levees_noz) == 0:
+            raise ValueError("No levee segments to schematize as weirs")
 
     # --- 8. write everything (sfincs.inp written last, incl. component files) ---
     sf.write()
