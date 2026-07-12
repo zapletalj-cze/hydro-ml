@@ -79,12 +79,12 @@ OUTPUT_GPKG = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\
 
 CRS_METRIC = 2180
 
-SEGMENT_LEN_M      = 300.0   # target segment length
+SEGMENT_LEN_M      = 1000.0   # target segment length
 MIN_TAIL_FRAC      = 0.4     # trailing piece shorter than this fraction merges back
 MAX_DIST_M         = 30.0    # max point-to-segment distance for assignment
 MIN_POINTS_SEGMENT = 3       # measured-z requires at least this many points
 MIN_POINTS_LEVEE   = 3       # levee-level dz requires at least this many points
-DZ_DEFAULT         = 2.0     # global fallback [m]
+DZ_DEFAULT         = 0.9     # global fallback [m]
 DZ_MAX             = 8.0     # cap on dz over DSM [m]: points above are bridge
                              # decks and similar structures, not levee crests
                              # (verified visually on the tallest candidates)
@@ -98,7 +98,7 @@ CONSERVATIVE_PCT   = 20      # percentile for the conservative variant
 # Optional canopy filter: sample the canopy-height raster at each point and
 # drop points under vegetation taller than CANOPY_MAX_M regardless of dz.
 # Set CANOPY_TIF = None to disable (the DZ_MIN tolerance then does the work).
-CANOPY_TIF   = None          # e.g. Path(r"D:\...\canopy_height_2180.tif")
+CANOPY_TIF   = r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\data\CanopyHeight\Poland\reprojected\ETH_GlobalCanopyHeight_10m_2020_Poland_Map_2180.tif"          # e.g. Path(r"D:\...\canopy_height_2180.tif")
 CANOPY_MAX_M = 2.0
 
 H_COLUMN = "h_te_ortho"      # crest elevation column on the points (EGM2008)

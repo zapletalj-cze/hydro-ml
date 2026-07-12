@@ -1,0 +1,17 @@
+
+=== building baseline -> D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\SFINCS_model\model_RP100\sfincs_baseline
+Traceback (most recent call last):
+  File "D:\\90_PersonalFoldlers\\JZa\\DataProcessing\\_git\\hydro-ml\\03_SFINCS\\01_build_sfincs_model.py", line 342, in <module>
+    main()
+    ~~~~^^
+  File "D:\\90_PersonalFoldlers\\JZa\\DataProcessing\\_git\\hydro-ml\\03_SFINCS\\01_build_sfincs_model.py", line 323, in main
+    build_model(roots[0], False, dis_gdf, dis_ts, levees_z, levees_noz, reclass_csv)
+    ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\\90_PersonalFoldlers\\JZa\\DataProcessing\\_git\\hydro-ml\\03_SFINCS\\01_build_sfincs_model.py", line 246, in build_model
+    sf.grid.create_from_region(
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\90_PersonalFoldlers\JZa\DataProcessing\_git\hydro-ml\03_SFINCS\.pixi\envs\default\Lib\site-packages\xarray\core\common.py", line 306, in __getattr__
+    raise AttributeError(
+        f"{type(self).__name__!r} object has no attribute {name!r}"
+    )
+AttributeError: 'Dataset' object has no attribute 'create_from_region'
