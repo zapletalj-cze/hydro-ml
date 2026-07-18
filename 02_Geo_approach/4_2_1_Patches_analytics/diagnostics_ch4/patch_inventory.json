@@ -1,0 +1,232 @@
+{
+  "notes": [],
+  "dataset_PL": {
+    "dir": "D:\\90_PersonalFoldlers\\JZa\\DataProcessing\\levees_detection\\geomorphological_ML\\_FINAL_EVAL\\patches\\patches_PL_train",
+    "metadata_csv": "D:\\90_PersonalFoldlers\\JZa\\DataProcessing\\levees_detection\\geomorphological_ML\\_FINAL_EVAL\\patches\\patches_PL_train\\patches_metadata.csv",
+    "n_rows": 11058,
+    "columns": [
+      "patch_id",
+      "patch_type",
+      "category",
+      "center_x",
+      "center_y",
+      "source_idx",
+      "uparea",
+      "comid",
+      "basin_id",
+      "n_label_px",
+      "npz_path"
+    ],
+    "n_npz_files": 11058,
+    "counts": {
+      "patch_type": {
+        "negative": 6622,
+        "positive": 4436
+      },
+      "category": {
+        "L": 2634,
+        "M": 1802
+      },
+      "basin_id": {
+        "24027703": 11058
+      }
+    },
+    "crosstabs": {
+      "category": {
+        "L": {
+          "positive": 2634
+        },
+        "M": {
+          "positive": 1802
+        }
+      },
+      "basin_id": {
+        "24027703": {
+          "negative": 6622,
+          "positive": 4436
+        }
+      }
+    }
+  },
+  "dataset_USA": {
+    "dir": "D:\\90_PersonalFoldlers\\JZa\\DataProcessing\\levees_detection\\geomorphological_ML\\patches_v02_USA\\patches",
+    "metadata_csv": "D:\\90_PersonalFoldlers\\JZa\\DataProcessing\\levees_detection\\geomorphological_ML\\patches_v02_USA\\patches_metadata.csv",
+    "n_rows": 23721,
+    "columns": [
+      "patch_id",
+      "patch_type",
+      "category",
+      "center_x",
+      "center_y",
+      "source_idx",
+      "uparea",
+      "comid",
+      "basin_id",
+      "n_label_px",
+      "npz_path"
+    ],
+    "n_npz_files": 23721,
+    "counts": {
+      "patch_type": {
+        "negative": 16416,
+        "positive": 7305
+      },
+      "category": {
+        "L": 4961,
+        "M": 2344
+      },
+      "basin_id": {
+        "74072588": 15166,
+        "74071210": 3854,
+        "74053287": 1588,
+        "74036934": 1057,
+        "74071246": 693,
+        "73014311": 410,
+        "73014354": 342,
+        "74071277": 127,
+        "74054789": 112,
+        "74071482": 87,
+        "75011551": 87,
+        "74071461": 60,
+        "73014567": 39,
+        "74054318": 34,
+        "73014455": 33,
+        "74054349": 21,
+        "73017619": 11
+      }
+    },
+    "crosstabs": {
+      "category": {
+        "L": {
+          "positive": 4961
+        },
+        "M": {
+          "positive": 2344
+        }
+      },
+      "basin_id": {
+        "73014311": {
+          "negative": 353,
+          "positive": 57
+        },
+        "73014354": {
+          "negative": 325,
+          "positive": 17
+        },
+        "73014455": {
+          "negative": 33,
+          "positive": 0
+        },
+        "73014567": {
+          "negative": 39,
+          "positive": 0
+        },
+        "73017619": {
+          "negative": 11,
+          "positive": 0
+        },
+        "74036934": {
+          "negative": 366,
+          "positive": 691
+        },
+        "74053287": {
+          "negative": 1322,
+          "positive": 266
+        },
+        "74054318": {
+          "negative": 34,
+          "positive": 0
+        },
+        "74054349": {
+          "negative": 21,
+          "positive": 0
+        },
+        "74054789": {
+          "negative": 112,
+          "positive": 0
+        },
+        "74071210": {
+          "negative": 2176,
+          "positive": 1678
+        },
+        "74071246": {
+          "negative": 659,
+          "positive": 34
+        },
+        "74071277": {
+          "negative": 127,
+          "positive": 0
+        },
+        "74071461": {
+          "negative": 54,
+          "positive": 6
+        },
+        "74071482": {
+          "negative": 44,
+          "positive": 43
+        },
+        "74072588": {
+          "negative": 10653,
+          "positive": 4513
+        },
+        "75011551": {
+          "negative": 87,
+          "positive": 0
+        }
+      }
+    }
+  },
+  "train_split_artifacts": {
+    "dir": "D:\\90_PersonalFoldlers\\JZa\\DataProcessing\\levees_detection\\geomorphological_ML\\_FINAL_EVAL\\training_v06_segformer_PL_US",
+    "artifacts": [
+      {
+        "file": "eval_basin_Odra\\eval_log.txt",
+        "size_kb": 2.6,
+        "parse_error": "Error tokenizing data. C error: Expected 1 fields in line 7, saw 7\n"
+      },
+      {
+        "file": "val_results_per_patch.csv",
+        "size_kb": 1129.3,
+        "columns": [
+          "patch_id",
+          "category",
+          "tp",
+          "fp",
+          "fn",
+          "tn",
+          "precision",
+          "recall",
+          "f1",
+          "dice",
+          "iou",
+          "cldice",
+          "n_label_px",
+          "region",
+          "patch_type"
+        ],
+        "n_rows": 9709
+      },
+      {
+        "file": "metadata_with_split.csv",
+        "size_kb": 4662.4,
+        "columns": [
+          "patch_id",
+          "patch_type",
+          "category",
+          "center_x",
+          "center_y",
+          "source_idx",
+          "uparea",
+          "comid",
+          "basin_id",
+          "n_label_px",
+          "npz_path",
+          "region",
+          "comid_global",
+          "split"
+        ],
+        "n_rows": 34779
+      }
+    ]
+  }
+}

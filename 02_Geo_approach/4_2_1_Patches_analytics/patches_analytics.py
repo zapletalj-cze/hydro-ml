@@ -40,10 +40,10 @@ import pandas as pd
 BASE = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL")
 
 DATASETS = {
-    "PL":  {"dir": BASE / "patches" / "patches_v02_PL",
-            "metadata": None},   # None -> auto-discover *metadata*.csv in dir
-    "USA": {"dir": BASE / "patches" / "patches_v02_USA",
-            "metadata": None},
+    "PL":  {"dir": Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL") / "patches" / "patches_PL_train",
+            "metadata": r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\patches\patches_PL_train\patches_metadata.csv"},   # None -> auto-discover *metadata*.csv in dir
+    "USA": {"dir": Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\patches_v02_USA") / "patches",
+            "metadata": r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\patches_v02_USA\patches_metadata.csv"},
 }
 
 # Training run folder - searched for stored split artifacts (val ids etc.)
