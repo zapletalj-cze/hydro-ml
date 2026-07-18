@@ -273,7 +273,31 @@
           "comid_global",
           "split"
         ],
-        "n_rows": 34779
+        "n_rows": 34779,
+        "split_counts": {
+          "train": 26276,
+          "val": 8503
+        },
+        "split_by_region": {
+          "PL": {
+            "train": 8241,
+            "val": 2817
+          },
+          "USA": {
+            "train": 18035,
+            "val": 5686
+          }
+        },
+        "split_by_patch_type": {
+          "negative": {
+            "train": 17279,
+            "val": 5759
+          },
+          "positive": {
+            "train": 8997,
+            "val": 2744
+          }
+        }
       }
     ]
   }
