@@ -13,9 +13,9 @@ import pandas as pd
 
 # ---- CONFIG: fill the three evaluation output folders -----------------------
 EVAL_RUNS = {
-    "segformer_mit_b2":   Path(r"D:\PATH\TO\arch_segformer\eval_wisla"),
-    "unet_resnet34":      Path(r"D:\PATH\TO\arch_unet\eval_wisla"),
-    "deeplabv3p_resnet50": Path(r"D:\PATH\TO\arch_deeplab\eval_wisla"),
+    "segformer_mit_b2":   Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\training_v05_segformer\eval_basin_B"),
+    "unet_resnet34":      Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\training_v05_unet_resnet\eval_basin_B"),
+    "deeplabv3p_resnet50": Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\training_v05_deep_labv3plus\eval_basin_B"),
 }
 DIAG_OUT = Path(__file__).parent / "diagnostics_ch4"
 
