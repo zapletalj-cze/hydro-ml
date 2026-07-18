@@ -115,7 +115,7 @@ OUTPUT_DT_S = 3600                # map output interval [s]
 # Full path to the SFINCS Windows kernel. A run.bat is written into each model
 # folder regardless; set RUN_AFTER_BUILD=True to also launch both runs here.
 EXE_PATH        = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\SFINCS\SFINCS_2026_01_release\SFINCS_v2.4.0_Galibier_release_exe\sfincs.exe")
-RUN_AFTER_BUILD = False
+RUN_AFTER_BUILD = True
 
 # Manning reclass table is written next to this script on first run.
 # IMPORTANT: hydromt reads it with index_col=0 and requires a column named "N".

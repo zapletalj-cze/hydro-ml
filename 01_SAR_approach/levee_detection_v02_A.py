@@ -58,13 +58,13 @@ if cuda_ok:
 # ============================================================
 
 # --- Input directories -------------------------------------------------------
-ASC_DIR      = Path(r'C:/data/processed/ascending')
-DESC_DIR     = Path(r'C:/data/processed/descending')
-BDOT10K_PATH = Path(r'C:/data/bdot10k/BDOT10k.gpkg')
-AOI_PATH     = Path(r'C:/data/aoi/aoi.gpkg')
+ASC_DIR      = Path(r'D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\sentinel1_data\processed\ascending')
+DESC_DIR     = Path(r'D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\sentinel1_data\processed\descending')
+BDOT10K_PATH = Path(r'D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\levees_selection\WalyNaspy.gpkg')
+AOI_PATH     = Path(r'D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\AOI_Poland.gpkg')
 
 # --- Output directory --------------------------------------------------------
-OUT_DIR = Path(r'C:/data/model')
+OUT_DIR = Path(r'D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\02_modeldevelopment\v04')
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # --- Coordinate system -------------------------------------------------------
@@ -152,11 +152,12 @@ def load_aoi_extent(aoi_path: Path, target_epsg: int = EPSG) -> dict:
     if aoi.crs and aoi.crs.to_epsg() != target_epsg:
         aoi = aoi.to_crs(epsg=target_epsg)
     bounds = aoi.total_bounds
+    snap = 10.0
     extent = {
-        'xmin': float(bounds[0]),
-        'ymin': float(bounds[1]),
-        'xmax': float(bounds[2]),
-        'ymax': float(bounds[3]),
+        'xmin': float(np.floor(bounds[0] / snap) * snap),
+        'ymin': float(np.floor(bounds[1] / snap) * snap),
+        'xmax': float(np.ceil(bounds[2]  / snap) * snap),
+        'ymax': float(np.ceil(bounds[3]  / snap) * snap),
     }
     print(f'AOI extent (EPSG:{target_epsg}):')
     print(f'  xmin={extent["xmin"]:.1f}  ymin={extent["ymin"]:.1f}')
@@ -410,16 +411,6 @@ reference (symmetric normalized GLCM, offsets 0/45/90/135 deg, d=1) and is
 correct to machine precision.
 """
 
-import numpy as np
-import torch
-import torch.nn.functional as F
-
-# these come from the SAR script's CONFIG; kept as module-level defaults here
-GLCM_WINDOW = 7
-GLCM_LEVELS = 64
-GLCM_DIST   = 1
-DEVICE      = 'cuda' if torch.cuda.is_available() else 'cpu'
-
 _INT32_MAX = 2**31 - 1
 
 
@@ -557,6 +548,24 @@ def compute_glcm_pytorch(arr: np.ndarray, window: int = GLCM_WINDOW,
     }
 
 
+# --- 3.2 Compute GLCM features ----------------------------------------------
+_asc_glcm_cache  = CACHE_DIR / 'asc_glcm.npz'
+_desc_glcm_cache = CACHE_DIR / 'desc_glcm.npz'
+
+if _asc_glcm_cache.exists() and _desc_glcm_cache.exists():
+    print('GLCM cache found — loading...')
+    asc_glcm  = dict(np.load(_asc_glcm_cache))
+    desc_glcm = dict(np.load(_desc_glcm_cache))
+    print('  GLCM loaded from cache.')
+else:
+    print('\nComputing GLCM — ascending VV...')
+    asc_glcm  = compute_glcm_pytorch(asc_vv_mean)
+    np.savez_compressed(_asc_glcm_cache, **asc_glcm)
+    print('Computing GLCM — descending VV...')
+    desc_glcm = compute_glcm_pytorch(desc_vv_mean)
+    np.savez_compressed(_desc_glcm_cache, **desc_glcm)
+    print('  GLCM saved to cache.')
+
 # --- 3.3 Feature stack assembly ----------------------------------------------
 
 BAND_NAMES = [
@@ -578,12 +587,15 @@ assert all(a.shape == FEATURE_ARRAYS[0].shape for a in FEATURE_ARRAYS), \
     f'Feature array shape mismatch: {set(a.shape for a in FEATURE_ARRAYS)}'
 
 FEATURE_STACK_PATH = OUT_DIR / 'feature_stack.tif'
-write_multiband_tiff(
-    path=FEATURE_STACK_PATH,
-    arrays=FEATURE_ARRAYS,
-    band_names=BAND_NAMES,
-    geo_info=geo_ref,
-)
+if not FEATURE_STACK_PATH.exists():
+    write_multiband_tiff(
+        path=FEATURE_STACK_PATH,
+        arrays=FEATURE_ARRAYS,
+        band_names=BAND_NAMES,
+        geo_info=geo_ref,
+    )
+else:
+    print(f'  Feature stack already exists — skipping write.')
 print(f'Feature stack: {FEATURE_STACK_PATH}')
 
 
@@ -593,31 +605,12 @@ print(f'Feature stack: {FEATURE_STACK_PATH}')
 
 def load_ground_truth(bdot10k_path: Path, target_epsg: int = EPSG) -> gpd.GeoDataFrame:
     print(f'Loading BDOT10k: {bdot10k_path}')
-    gdf = gpd.read_file(bdot10k_path, layer='OT_BUZM_L', engine='pyogrio')
-    print(f'  Total OT_BUZM_L features: {len(gdf)}  CRS: {gdf.crs}')
-
-    hraze  = gdf[gdf['rodzaj'] == 'wal przeciwpowodziowy lub grobla'].copy()
-    hraze['source'] = 'hraze'
-    print(f'  Hráze: {len(hraze)}')
-
-    lengths = (gdf.geometry.length if gdf.crs and gdf.crs.is_projected
-               else gdf.geometry.to_crs(epsg=target_epsg).length)
-    nasypy = gdf[
-        (gdf['rodzaj'] == 'nasyp') &
-        (lengths >= NASYP_MIN_LENGTH) &
-        (gdf['wysokosc'].fillna(0)   >= NASYP_MIN_HEIGHT) &
-        (gdf['szerKorony'].fillna(0) >= NASYP_MIN_WIDTH)
-    ].copy()
-    nasypy['source'] = 'nasyp'
-    print(f'  Náspy (filtered): {len(nasypy)}')
-
-    gt = gpd.GeoDataFrame(
-        pd.concat([hraze, nasypy], ignore_index=True), crs=gdf.crs
-    )
-    if gt.crs and gt.crs.to_epsg() != target_epsg:
-        gt = gt.to_crs(epsg=target_epsg)
-    print(f'  Combined: {len(gt)} features')
-    return gt
+    gdf = gpd.read_file(bdot10k_path, engine='pyogrio')
+    
+    if gdf.crs and gdf.crs.to_epsg() != target_epsg:
+        gdf = gdf.to_crs(epsg=target_epsg)
+    print(f'  Combined: {len(gdf)} features')
+    return gdf
 
 
 ground_truth = load_ground_truth(BDOT10K_PATH)
