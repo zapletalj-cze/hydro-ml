@@ -115,7 +115,7 @@ OUTPUT_DT_S = 3600                # map output interval [s]
 # Full path to the SFINCS Windows kernel. A run.bat is written into each model
 # folder regardless; set RUN_AFTER_BUILD=True to also launch both runs here.
 EXE_PATH        = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\SFINCS\SFINCS_2026_01_release\SFINCS_v2.4.0_Galibier_release_exe\sfincs.exe")
-RUN_AFTER_BUILD = True
+RUN_AFTER_BUILD = False
 
 # Manning reclass table is written next to this script on first run.
 # IMPORTANT: hydromt reads it with index_col=0 and requires a column named "N".
@@ -269,6 +269,71 @@ def model_is_built(root):
     return (root / "sfincs.inp").exists() and (root / "sfincs.dep").exists()
 
 
+def write_weirfile_manual(root, levees_z, filename="sfincs.weir"):
+    """Last-resort writer: SFINCS structure (tekal) format, one block per
+    segment, columns x y z_crest par1(Cd). Used only when hydromt wrote no
+    weir file at all."""
+    path = root / filename
+    n_struct = 0
+    with open(path, "w") as f:
+        for i, row in levees_z.reset_index(drop=True).iterrows():
+            geom = row.geometry
+            z = float(row["z"])
+            coords = list(geom.coords)
+            if len(coords) < 2:
+                continue
+            f.write(f"weir{i:05d}\n")
+            f.write(f"{len(coords)} 4\n")
+            for x, y in coords:
+                f.write(f"{x:.2f} {y:.2f} {z:.2f} {WEIR_CD:.2f}\n")
+            n_struct += 1
+    print(f"  manually wrote {n_struct} weir structures -> {path.name}")
+    return filename
+
+
+def verify_weirs_in_inp(root, levees_z):
+    """The kernel reads structures ONLY via a 'weirfile' entry in sfincs.inp.
+    hydromt may hold weirs in memory yet not reference them in the inp; then
+    the model is formally valid and the kernel silently ignores the levees.
+    This check makes that failure impossible to miss and repairs it."""
+    import re
+    inp_path = root / "sfincs.inp"
+    inp = inp_path.read_text()
+
+    m = re.search(r"^\s*weirfile\s*=\s*(\S+)", inp, flags=re.M)
+    referenced = m.group(1) if m else None
+
+    # any weir-like file hydromt may have written (root or gis subfolder)
+    candidates = [p for p in root.rglob("*") if p.is_file()
+                  and ("weir" in p.name.lower())
+                  and p.suffix.lower() not in (".geojson", ".gpkg", ".shp",
+                                               ".dbf", ".shx", ".prj", ".cpg")]
+
+    if referenced and (root / referenced).exists():
+        n_lines = sum(1 for _ in open(root / referenced))
+        print(f"  weirfile OK: '{referenced}' referenced in sfincs.inp "
+              f"({n_lines} lines)")
+        return
+
+    if candidates:
+        # file exists but inp does not point at it -> add the reference
+        weir_name = candidates[0].name
+        if candidates[0].parent != root:
+            (root / weir_name).write_bytes(candidates[0].read_bytes())
+        inp = inp.rstrip() + f"\nweirfile           = {weir_name}\n"
+        inp_path.write_text(inp)
+        print(f"  REPAIRED: added 'weirfile = {weir_name}' to sfincs.inp "
+              f"(hydromt wrote the file but not the reference)")
+        return
+
+    # nothing written at all -> write the structure file ourselves
+    weir_name = write_weirfile_manual(root, levees_z)
+    inp = inp.rstrip() + f"\nweirfile           = {weir_name}\n"
+    inp_path.write_text(inp)
+    print(f"  REPAIRED: wrote {weir_name} manually and referenced it in "
+          f"sfincs.inp")
+
+
 def build_model(root, with_levees, dis_gdf, dis_ts, levees_z, levees_noz, reclass_csv):
     """Build one SFINCS model with the v2 component API. Both variants share
     every call except the weirs block, so the levees are the only difference."""
@@ -347,6 +412,8 @@ def build_model(root, with_levees, dis_gdf, dis_ts, levees_z, levees_noz, reclas
 
     # --- 8. write everything (sfincs.inp written last, incl. component files) ---
     sf.write()
+    if with_levees:
+        verify_weirs_in_inp(root, levees_z if len(levees_z) else levees_noz)
     write_run_bat(root, EXE_PATH)
     print(f"  written: {root}")
     return sf
@@ -370,8 +437,11 @@ def main():
     build_model(roots[1], True, dis_gdf, dis_ts, levees_z, levees_noz, reclass_csv)
 
     if RUN_AFTER_BUILD:
-        print("\nRunning both models locally...")
+        print("\nRunning models locally...")
         for r in roots:
+            if SKIP_EXISTING and (r / "sfincs_map.nc").exists():
+                print(f"  skipping run {r.name} (sfincs_map.nc exists)")
+                continue
             run_model(r, EXE_PATH)
     else:
         print("\nBoth models built. Run them locally without Docker by either")
