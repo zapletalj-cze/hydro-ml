@@ -42,13 +42,25 @@ ASC_DIR      = Path(r'D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection
 DESC_DIR     = Path(r'D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\sentinel1_data\processed\descending')
 BDOT10K_PATH = Path(r'D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\levees_selection\WalyNaspy.gpkg')
 
-OUT_DIR      = Path(r'D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\02_modeldevelopment\v04')
-FEATURE_TIF  = OUT_DIR / 'feature_stack.tif'
-LABEL_TIF    = OUT_DIR / 'label_mask.tif'
-MODEL_JSON   = OUT_DIR / 'xgb_levee_model.json'
-META_JSON    = OUT_DIR / 'model_metadata.json'
-PROBA_TIF    = OUT_DIR / 'levee_probability.tif'
-PRED_TIF     = OUT_DIR / 'levee_prediction.tif'
+SCRIPT_DIR   = Path(__file__).resolve().parent
+LEGACY_OUT_DIR = Path(r'D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\02_modeldevelopment\v04')
+OUT_DIR      = SCRIPT_DIR
+
+
+def resolve_artifact(name):
+    for base_dir in (SCRIPT_DIR, LEGACY_OUT_DIR):
+        candidate = base_dir / name
+        if candidate.exists():
+            return candidate
+    return SCRIPT_DIR / name
+
+
+FEATURE_TIF  = resolve_artifact('feature_stack.tif')
+LABEL_TIF    = resolve_artifact('label_mask.tif')
+MODEL_JSON   = resolve_artifact('xgb_levee_model.json')
+META_JSON    = resolve_artifact('model_metadata.json')
+PROBA_TIF    = resolve_artifact('levee_probability.tif')
+PRED_TIF     = resolve_artifact('levee_prediction.tif')
 
 BLOCK_SIZE    = 256
 TEST_FRACTION = 0.3
@@ -67,6 +79,14 @@ BAND_NAMES = [
 ]
 
 report = {}
+
+
+def open_raster(path):
+    from osgeo import gdal
+    if not path.exists():
+        return None
+    ds = gdal.Open(str(path))
+    return ds
 
 # ============================================================
 # 1. ENVIRONMENT
@@ -135,8 +155,8 @@ def harvest_reference():
             out[f"by_{col}"] = {str(k): int(v)
                                 for k, v in gdf[col].value_counts().items()}
 
-    if LABEL_TIF.exists():
-        ds = gdal.Open(str(LABEL_TIF))
+    ds = open_raster(LABEL_TIF)
+    if ds is not None:
         arr = ds.GetRasterBand(1).ReadAsArray()
         nod = ds.GetRasterBand(1).GetNoDataValue()
         valid = np.ones(arr.shape, bool) if nod is None else (arr != nod)
@@ -150,6 +170,8 @@ def harvest_reference():
             "positive_area_km2": pos * PIXEL_SIZE**2 / 1e6,
         }
         ds = None
+    else:
+        out["missing_artifact"] = str(LABEL_TIF)
     return out
 
 # ============================================================
@@ -182,7 +204,16 @@ def harvest_split_and_eval():
     gdal.UseExceptions()
 
     out = {}
+    missing = [str(path) for path in (FEATURE_TIF, LABEL_TIF) if not path.exists()]
+    if missing:
+        out["missing_artifacts"] = missing
+        return out
+
     ds = gdal.Open(str(FEATURE_TIF))
+    if ds is None:
+        out["missing_artifacts"] = [str(FEATURE_TIF)]
+        return out
+
     nrows, ncols, nbands = ds.RasterYSize, ds.RasterXSize, ds.RasterCount
     out["stack"] = {"nrows": nrows, "ncols": ncols, "nbands": nbands}
 
@@ -190,7 +221,12 @@ def harvest_split_and_eval():
                                           TEST_FRACTION, RANDOM_STATE)
     out["blocks"] = blocks
 
-    lab = gdal.Open(str(LABEL_TIF)).GetRasterBand(1).ReadAsArray()
+    lab_ds = gdal.Open(str(LABEL_TIF))
+    if lab_ds is None:
+        out["missing_artifacts"] = [str(LABEL_TIF)]
+        return out
+
+    lab = lab_ds.GetRasterBand(1).ReadAsArray()
     y_flat = (lab == 1).astype(np.int8).ravel()
     s_flat = split.ravel()
 
@@ -285,6 +321,8 @@ def harvest_inference():
         ds = None
     if PROBA_TIF.exists():
         out["probability_map_exists"] = True
+    if not PRED_TIF.exists() and not PROBA_TIF.exists():
+        out["missing_artifacts"] = [str(PRED_TIF), str(PROBA_TIF)]
     return out
 
 # ============================================================
@@ -292,6 +330,7 @@ def harvest_inference():
 # ============================================================
 
 def main():
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
     report["environment"] = harvest_environment()
     report["scenes"] = harvest_scenes()
     report["reference"] = harvest_reference()
