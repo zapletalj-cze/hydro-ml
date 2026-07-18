@@ -41,7 +41,7 @@ BASE = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorp
 
 DATASETS = {
     "PL":  {"dir": Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL") / "patches" / "patches_PL_train",
-            "metadata": r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\patches\patches_PL_train\patches_metadata.csv"}, 
+            "metadata": r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\patches\patches_PL_train\patches_metadata.csv"},
 
     "PL_test":  {"dir": Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL") / "patches" / "patches_PL_test",
             "metadata": r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\patches\patches_PL_test\patches_metadata.csv"},
@@ -195,6 +195,25 @@ def harvest_split_artifacts(train_dir, datasets_meta):
                     dfa = pd.read_csv(f)
                     entry["columns"] = list(dfa.columns)
                     entry["n_rows"] = int(len(dfa))
+                    low = {c.lower(): c for c in dfa.columns}
+                    if "split" in low:
+                        sc = low["split"]
+                        entry["split_counts"] = {str(k): int(v)
+                            for k, v in dfa[sc].astype(str).value_counts().items()}
+                        if "region" in low:
+                            ct = pd.crosstab(dfa[low["region"]].astype(str),
+                                             dfa[sc].astype(str))
+                            entry["split_by_region"] = {
+                                str(i): {str(j): int(ct.loc[i, j])
+                                         for j in ct.columns}
+                                for i in ct.index}
+                        if "patch_type" in low:
+                            ct = pd.crosstab(dfa[low["patch_type"]].astype(str),
+                                             dfa[sc].astype(str))
+                            entry["split_by_patch_type"] = {
+                                str(i): {str(j): int(ct.loc[i, j])
+                                         for j in ct.columns}
+                                for i in ct.index}
             except Exception as e:
                 entry["parse_error"] = str(e)
 
