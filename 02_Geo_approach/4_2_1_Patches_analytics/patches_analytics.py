@@ -41,7 +41,11 @@ BASE = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorp
 
 DATASETS = {
     "PL":  {"dir": Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL") / "patches" / "patches_PL_train",
-            "metadata": r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\patches\patches_PL_train\patches_metadata.csv"},   # None -> auto-discover *metadata*.csv in dir
+            "metadata": r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\patches\patches_PL_train\patches_metadata.csv"}, 
+
+    "PL_test":  {"dir": Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL") / "patches" / "patches_PL_test",
+            "metadata": r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\patches\patches_PL_test\patches_metadata.csv"},
+
     "USA": {"dir": Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\patches_v02_USA") / "patches",
             "metadata": r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\patches_v02_USA\patches_metadata.csv"},
 }

@@ -8,6 +8,15 @@ PL,category,L,positive,2634
 PL,category,M,positive,1802
 PL,basin_id,24027703,negative,6622
 PL,basin_id,24027703,positive,4436
+PL_test,patch_type,negative,,6124
+PL_test,patch_type,positive,,3440
+PL_test,category,L,,2040
+PL_test,category,M,,1400
+PL_test,basin_id,24027708,,9564
+PL_test,category,L,positive,2040
+PL_test,category,M,positive,1400
+PL_test,basin_id,24027708,negative,6124
+PL_test,basin_id,24027708,positive,3440
 USA,patch_type,negative,,16416
 USA,patch_type,positive,,7305
 USA,category,L,,4961

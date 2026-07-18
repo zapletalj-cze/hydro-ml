@@ -50,6 +50,54 @@ PATCH INVENTORY (section 4.2.1 inputs)
       }
     }
   },
+  "dataset_PL_test": {
+    "dir": "D:\\90_PersonalFoldlers\\JZa\\DataProcessing\\levees_detection\\geomorphological_ML\\_FINAL_EVAL\\patches\\patches_PL_test",
+    "metadata_csv": "D:\\90_PersonalFoldlers\\JZa\\DataProcessing\\levees_detection\\geomorphological_ML\\_FINAL_EVAL\\patches\\patches_PL_test\\patches_metadata.csv",
+    "n_rows": 9564,
+    "columns": [
+      "patch_id",
+      "patch_type",
+      "category",
+      "center_x",
+      "center_y",
+      "source_idx",
+      "uparea",
+      "comid",
+      "basin_id",
+      "n_label_px",
+      "npz_path"
+    ],
+    "n_npz_files": 9564,
+    "counts": {
+      "patch_type": {
+        "negative": 6124,
+        "positive": 3440
+      },
+      "category": {
+        "L": 2040,
+        "M": 1400
+      },
+      "basin_id": {
+        "24027708": 9564
+      }
+    },
+    "crosstabs": {
+      "category": {
+        "L": {
+          "positive": 2040
+        },
+        "M": {
+          "positive": 1400
+        }
+      },
+      "basin_id": {
+        "24027708": {
+          "negative": 6124,
+          "positive": 3440
+        }
+      }
+    }
+  },
   "dataset_USA": {
     "dir": "D:\\90_PersonalFoldlers\\JZa\\DataProcessing\\levees_detection\\geomorphological_ML\\patches_v02_USA\\patches",
     "metadata_csv": "D:\\90_PersonalFoldlers\\JZa\\DataProcessing\\levees_detection\\geomorphological_ML\\patches_v02_USA\\patches_metadata.csv",
