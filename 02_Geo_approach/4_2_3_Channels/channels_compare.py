@@ -14,9 +14,9 @@ import pandas as pd
 # ---- CONFIG: fill the evaluation output folders -----------------------------
 # Adjust names/paths to the ablation variants that exist.
 EVAL_RUNS = {
-    "v1_dsm":      Path(r"D:\PATH\TO\ablation_v1_dsm\eval_basin_B"),
-    "v2_dsm_tpi":  Path(r"D:\PATH\TO\ablation_v2_dsm_tpi\eval_basin_B"),
-    "v3_full":     Path(r"D:\PATH\TO\ablation_v3_full\eval_basin_B"),
+    "v1_dsm":      Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v03_segformer_v1_dsm_only\eval_basin_Odra"),
+    "v2_dsm_tpi":  Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v03_segformer_v2_dsm_tpi\eval_basin_Odra"),
+    "v3_full":     Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer\training_v01\eval_basin_B"),
 }
 DIAG_OUT = Path(__file__).parent / "diagnostics_ch4"
 

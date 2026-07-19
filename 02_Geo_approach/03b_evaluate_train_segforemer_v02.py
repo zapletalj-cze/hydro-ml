@@ -45,7 +45,7 @@ import segmentation_models_pytorch as smp
 
 # ------- Paths ----------------------------------------------
 # Training run that produced best_model.pt + norm_stats.json
-TRAIN_OUTPUT_DIR = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\training_v06_segformer_PL_US")
+TRAIN_OUTPUT_DIR = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\training_v04_segformer\training_v01")
 
 # Held-out basin (basin B) to evaluate on
 TEST_PATCHES_DIR  = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\patches\patches_PL_test\patches")
@@ -66,7 +66,9 @@ NUM_WORKERS = 16
 
 
 # ------- Channels (must match training) ----------------------
+# INPUT_CHANNELS = ["dsm", "tpi_r5", "tpi_r10", "tpi_r15", "canopy_height", "canopy_height_sd", "water"]
 INPUT_CHANNELS = ["dsm", "tpi_r5", "tpi_r10", "tpi_r15", "canopy_height", "canopy_height_sd", "water"]
+
 LABEL_CHANNEL  = "label"
 WATER_CHANNEL  = "water"
 
