@@ -1,0 +1,258 @@
+SAR PROOF-OF-CONCEPT DIAGNOSTICS (section 4.1 inputs)
+============================================================
+{
+  "environment": {
+    "python": "3.12.13",
+    "numpy": "2.4.3",
+    "xgboost": "3.3.0",
+    "sklearn": "1.8.0",
+    "geopandas": "1.1.3"
+  },
+  "scenes": {
+    "ascending": {
+      "VV": {
+        "n_scenes": 32,
+        "date_min": "20250404",
+        "date_max": "20250926",
+        "n_unique_dates": 23
+      },
+      "VH": {
+        "n_scenes": 32,
+        "date_min": "20250404",
+        "date_max": "20250926",
+        "n_unique_dates": 23
+      }
+    },
+    "descending": {
+      "VV": {
+        "n_scenes": 36,
+        "date_min": "20250401",
+        "date_max": "20250923",
+        "n_unique_dates": 24
+      },
+      "VH": {
+        "n_scenes": 36,
+        "date_min": "20250401",
+        "date_max": "20250923",
+        "n_unique_dates": 24
+      }
+    }
+  },
+  "reference": {
+    "n_features": 25172,
+    "total_length_km": 21053.126446091326,
+    "label_raster": {
+      "shape": [
+        56434,
+        39844
+      ],
+      "positive_pixels": 2681912,
+      "negative_pixels": 2245874384,
+      "positive_share": 0.001192726197147434,
+      "positive_area_km2": 268.1912
+    }
+  },
+  "model_metadata": {
+    "created": "2026-07-13T19:52:37.621264",
+    "model": "XGBoostClassifier",
+    "best_iteration": 387,
+    "optimal_threshold": 0.34934666752815247,
+    "best_f1": 0.7602768514658269,
+    "ap_score": 0.7838398770439099,
+    "roc_auc": 0.807337651111111,
+    "band_names": [
+      "asc_vv_mean",
+      "asc_vh_mean",
+      "asc_vv_std",
+      "asc_vh_std",
+      "asc_ratio",
+      "asc_glcm_contrast",
+      "asc_glcm_homogeneity",
+      "asc_glcm_energy",
+      "asc_glcm_correlation",
+      "desc_vv_mean",
+      "desc_vh_mean",
+      "desc_vv_std",
+      "desc_vh_std",
+      "desc_ratio",
+      "desc_glcm_contrast",
+      "desc_glcm_homogeneity",
+      "desc_glcm_energy",
+      "desc_glcm_correlation"
+    ],
+    "n_train": 70000,
+    "n_test": 30000,
+    "epsg": 2180,
+    "pixel_size_m": 10.0,
+    "glcm_window": 7,
+    "glcm_levels": 64,
+    "levee_buffer_m": 10.0,
+    "nasyp_min_length_m": 1000.0,
+    "nasyp_min_height_m": 2.0,
+    "nasyp_min_width_m": 12.0
+  },
+  "split_sampling_eval": {
+    "stack": {
+      "nrows": 56434,
+      "ncols": 39844,
+      "nbands": 18
+    },
+    "blocks": {
+      "blocks_rows": 221,
+      "blocks_cols": 156,
+      "n_blocks": 34476,
+      "n_test_blocks": 10343,
+      "n_train_blocks": 24133
+    },
+    "valid_pixels": 902604055,
+    "sampling": {
+      "train": {
+        "available_pos": 554134,
+        "available_neg": 632662165,
+        "sampled_pos": 35000,
+        "sampled_neg": 35000
+      },
+      "test": {
+        "available_pos": 227777,
+        "available_neg": 269159979,
+        "sampled_pos": 15000,
+        "sampled_neg": 15000
+      }
+    },
+    "test_eval": {
+      "n_test": 30000,
+      "ap": 0.7838398770439099,
+      "roc_auc": 0.807337651111111,
+      "best_threshold": 0.34934666752815247,
+      "best_f1": 0.7602768514658269,
+      "report_at_best_thr": {
+        "non-levee": {
+          "precision": 0.8460216901105981,
+          "recall": 0.5252666666666667,
+          "f1-score": 0.6481306297042735,
+          "support": 15000.0
+        },
+        "levee": {
+          "precision": 0.6557741576835694,
+          "recall": 0.9044,
+          "f1-score": 0.7602768515145572,
+          "support": 15000.0
+        },
+        "accuracy": 0.7148333333333333,
+        "macro avg": {
+          "precision": 0.7508979238970838,
+          "recall": 0.7148333333333333,
+          "f1-score": 0.7042037406094153,
+          "support": 30000.0
+        },
+        "weighted avg": {
+          "precision": 0.7508979238970839,
+          "recall": 0.7148333333333333,
+          "f1-score": 0.7042037406094153,
+          "support": 30000.0
+        }
+      }
+    },
+    "feature_importance": [
+      {
+        "rank": 1,
+        "feature": "asc_glcm_contrast",
+        "importance": 0.19444310665130615
+      },
+      {
+        "rank": 2,
+        "feature": "asc_vh_mean",
+        "importance": 0.10252299904823303
+      },
+      {
+        "rank": 3,
+        "feature": "asc_glcm_homogeneity",
+        "importance": 0.06559697538614273
+      },
+      {
+        "rank": 4,
+        "feature": "desc_vv_mean",
+        "importance": 0.06509854644536972
+      },
+      {
+        "rank": 5,
+        "feature": "desc_vh_mean",
+        "importance": 0.06370015442371368
+      },
+      {
+        "rank": 6,
+        "feature": "asc_vv_std",
+        "importance": 0.05366291105747223
+      },
+      {
+        "rank": 7,
+        "feature": "asc_vh_std",
+        "importance": 0.05079575255513191
+      },
+      {
+        "rank": 8,
+        "feature": "desc_glcm_contrast",
+        "importance": 0.049938008189201355
+      },
+      {
+        "rank": 9,
+        "feature": "desc_glcm_energy",
+        "importance": 0.04225553572177887
+      },
+      {
+        "rank": 10,
+        "feature": "desc_ratio",
+        "importance": 0.041992295533418655
+      },
+      {
+        "rank": 11,
+        "feature": "asc_ratio",
+        "importance": 0.04084652662277222
+      },
+      {
+        "rank": 12,
+        "feature": "desc_glcm_correlation",
+        "importance": 0.04026078060269356
+      },
+      {
+        "rank": 13,
+        "feature": "asc_vv_mean",
+        "importance": 0.03524117171764374
+      },
+      {
+        "rank": 14,
+        "feature": "desc_vh_std",
+        "importance": 0.03376193344593048
+      },
+      {
+        "rank": 15,
+        "feature": "desc_vv_std",
+        "importance": 0.03190166875720024
+      },
+      {
+        "rank": 16,
+        "feature": "asc_glcm_energy",
+        "importance": 0.030624276027083397
+      },
+      {
+        "rank": 17,
+        "feature": "desc_glcm_homogeneity",
+        "importance": 0.02878478914499283
+      },
+      {
+        "rank": 18,
+        "feature": "asc_glcm_correlation",
+        "importance": 0.028572548180818558
+      }
+    ]
+  },
+  "inference": {
+    "prediction": {
+      "levee_pixels": 445075085,
+      "levee_area_km2": 44507.5085,
+      "valid_pixels": 2248556296,
+      "levee_share_of_valid": 0.1979381551583799
+    },
+    "probability_map_exists": true
+  }
+}
