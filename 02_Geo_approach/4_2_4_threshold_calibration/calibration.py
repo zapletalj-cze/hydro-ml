@@ -107,17 +107,22 @@ def load_state_dict_compat(model, state_dict):
                            f"Unexpected: {unexpected}")
 
 
+def _extract_model_state(ckpt):
+    if not isinstance(ckpt, dict):
+        return ckpt
+    for key in ("model_state", "model_state_dict", "state_dict"):
+        if key in ckpt:
+            return ckpt[key]
+    return ckpt
+
+
 def build_model():
     model = smp.Segformer(encoder_name=SEGFORMER_BACKBONE,
                           encoder_weights=None,   # overwritten by checkpoint
                           in_channels=3, classes=1, activation=None)
     model = adapt_first_conv_segformer(model, N_INPUT_CHANNELS)
     ckpt = torch.load(TRAIN_OUTPUT_DIR / "best_model.pt", map_location=DEVICE)
-    if isinstance(ckpt, dict) and "model_state_dict" in ckpt:
-        ckpt = ckpt["model_state_dict"]
-    elif isinstance(ckpt, dict) and "state_dict" in ckpt:
-        ckpt = ckpt["state_dict"]
-    load_state_dict_compat(model, ckpt)
+    load_state_dict_compat(model, _extract_model_state(ckpt))
     return model.to(DEVICE).eval()
 
 

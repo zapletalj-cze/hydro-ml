@@ -1,0 +1,11 @@
+{
+  "best_threshold": 0.9,
+  "criterion": "micro F1, internal validation split",
+  "f1": 0.571971732076695,
+  "precision": 0.6887681610750883,
+  "recall": 0.48904324186522957,
+  "iou": 0.40053250037452637,
+  "reference_threshold": 0.5,
+  "f1_at_reference": 0.540186818468412,
+  "n_patches": 5686
+}
