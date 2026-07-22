@@ -44,7 +44,7 @@ gdal.UseExceptions()
 # ============================================================
 
 MODEL_ROOTS = [
-    Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\SFINCS_model\model_RP100\sfincs_baseline"),
+    # Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\SFINCS_model\model_RP100\sfincs_baseline"),
     Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\SFINCS_model\model_RP100\sfincs_levees"),
 ]
 
