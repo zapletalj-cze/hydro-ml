@@ -77,7 +77,7 @@ AOI_GPKG        = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detect
 DSM_TIF         = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\SFINCS_model\dtm\COP_DSM_10m_Wistula.tif")      # elevation, EGM2008, 10 m
 WORLDCOVER_TIF  = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\SFINCS_model\landuse\ESA_WorldCover_2021_2180_c.tif")   # ESA WorldCover classes
 DISCHARGE_GPKG  = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\SFINCS_model\bc_upstream\bc_upstream.gpkg")  # see format above
-LEVEES_GPKG     = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\SFINCS_model\levees\levee_segments_model_only.gpkg")  # levee segments with z (script 15)
+LEVEES_GPKG     = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\SFINCS_model\levees\levee_segments_z.gpkg")  # levee segments with z (script 15)
 
 # Optional: polygon marking the downstream edge where water may leave the
 # domain (outflow). If None, the WHOLE edge of the active domain becomes
@@ -104,10 +104,10 @@ WEIR_CD    = 0.6     # weir discharge coefficient (par1), SFINCS default
 # --- Rebuild control ----------------------------------------
 # True: a model whose sfincs.inp + sfincs.dep already exist is left untouched,
 # so a failed second model can be retried without rebuilding the first.
-SKIP_EXISTING = False
+SKIP_EXISTING = True
 
 # --- Steady-flow run ----------------------------------------
-SIM_HOURS   = 65                  # constant-Q run length; check steadiness
+SIM_HOURS   = 48                  # constant-Q run length; check steadiness
 TSTART      = "20260101 000000"   # sfincs.inp datetime format
 OUTPUT_DT_S = 3600                # map output interval [s]
 
@@ -216,8 +216,7 @@ def prepare_levees(path):
     if Z_COLUMN in gdf.columns:
         if Z_COLUMN != "z":
             gdf = gdf.rename(columns={Z_COLUMN: "z"})
-        gdf["z"] = pd.to_numeric(gdf["z"], errors="coerce")
-        has_z = gdf["z"].notna() & (gdf["z"] > 0)
+        has_z = gdf["z"].notna()
     else:
         gdf["z"] = np.nan
         has_z = pd.Series(False, index=gdf.index)
@@ -293,46 +292,27 @@ def write_weirfile_manual(root, levees_z, filename="sfincs.weir"):
 
 
 def verify_weirs_in_inp(root, levees_z):
-    """The kernel reads structures ONLY via a 'weirfile' entry in sfincs.inp.
-    hydromt may hold weirs in memory yet not reference them in the inp; then
-    the model is formally valid and the kernel silently ignores the levees.
-    This check makes that failure impossible to miss and repairs it."""
+    """Authoritative weirfile: ALWAYS rewrite sfincs.weir manually from the
+    segment z values and force the inp reference. hydromt v2 weirs.create was
+    observed to write z=0 for every vertex (ignoring the z column), which the
+    kernel prunes as below-bed -> '0 structure u/v points found'."""
     import re
     inp_path = root / "sfincs.inp"
     inp = inp_path.read_text()
 
-    m = re.search(r"^\s*weirfile\s*=\s*(\S+)", inp, flags=re.M)
-    referenced = m.group(1) if m else None
-
-    # any weir-like file hydromt may have written (root or gis subfolder)
-    candidates = [p for p in root.rglob("*") if p.is_file()
-                  and ("weir" in p.name.lower())
-                  and p.suffix.lower() not in (".geojson", ".gpkg", ".shp",
-                                               ".dbf", ".shx", ".prj", ".cpg")]
-
-    if referenced and (root / referenced).exists():
-        n_lines = sum(1 for _ in open(root / referenced))
-        print(f"  weirfile OK: '{referenced}' referenced in sfincs.inp "
-              f"({n_lines} lines)")
-        return
-
-    if candidates:
-        # file exists but inp does not point at it -> add the reference
-        weir_name = candidates[0].name
-        if candidates[0].parent != root:
-            (root / weir_name).write_bytes(candidates[0].read_bytes())
-        inp = inp.rstrip() + f"\nweirfile           = {weir_name}\n"
-        inp_path.write_text(inp)
-        print(f"  REPAIRED: added 'weirfile = {weir_name}' to sfincs.inp "
-              f"(hydromt wrote the file but not the reference)")
-        return
-
-    # nothing written at all -> write the structure file ourselves
     weir_name = write_weirfile_manual(root, levees_z)
-    inp = inp.rstrip() + f"\nweirfile           = {weir_name}\n"
+
+    zs = levees_z["z"].astype(float)
+    print(f"  weir crest z: min {zs.min():.2f} m, median {zs.median():.2f} m, "
+          f"max {zs.max():.2f} m (must be terrain-level, NOT 0)")
+
+    if re.search(r"^\s*weirfile\s*=", inp, flags=re.M):
+        inp = re.sub(r"^\s*weirfile\s*=\s*\S+", f"weirfile           = {weir_name}",
+                     inp, flags=re.M)
+    else:
+        inp = inp.rstrip() + f"\nweirfile           = {weir_name}\n"
     inp_path.write_text(inp)
-    print(f"  REPAIRED: wrote {weir_name} manually and referenced it in "
-          f"sfincs.inp")
+    print(f"  weirfile forced to manual '{weir_name}' in sfincs.inp")
 
 
 def build_model(root, with_levees, dis_gdf, dis_ts, levees_z, levees_noz, reclass_csv):
@@ -368,7 +348,7 @@ def build_model(root, with_levees, dis_gdf, dis_ts, levees_z, levees_noz, reclas
         "tstart":   t0.strftime(fmt),
         "tstop":    t1.strftime(fmt),
         "dtout":    OUTPUT_DT_S,
-        "dtmaxout": SIM_HOURS * 3600, 
+        "dtmaxout": SIM_HOURS * 3600,   # zsmax over the whole run
         "alpha":    0.5,
     })
 
@@ -414,7 +394,10 @@ def build_model(root, with_levees, dis_gdf, dis_ts, levees_z, levees_noz, reclas
     # --- 8. write everything (sfincs.inp written last, incl. component files) ---
     sf.write()
     if with_levees:
-        verify_weirs_in_inp(root, levees_z if len(levees_z) else levees_noz)
+        if len(levees_noz) > 0:
+            print(f"  WARNING: {len(levees_noz)} segments without z are NOT in "
+                  f"the manual weirfile (script 15 should assign z to all)")
+        verify_weirs_in_inp(root, levees_z)
     write_run_bat(root, EXE_PATH)
     print(f"  written: {root}")
     return sf
