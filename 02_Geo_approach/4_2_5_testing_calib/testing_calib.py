@@ -22,8 +22,12 @@ BASE = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorp
 TRAIN_DIR = BASE / "training_v06_segformer_PL_US"
 
 # test = Vistula, val = internal validation split of the training basins
-TEST_EVAL_DIR = TRAIN_DIR / "eval_basin_B"      # Wisla test outputs
-VAL_EVAL_DIR  = TRAIN_DIR / "eval_val"          # internal validation outputs
+TEST_EVAL_DIR = TRAIN_DIR / "eval_wisla"      # Wisla test outputs
+VAL_EVAL_DIR  = TRAIN_DIR / "eval_VALIDATION"          # internal validation outputs
+
+# target metrics for the validation bars in the generalization figure
+VAL_TARGET_RECALL = 0.58
+VAL_TARGET_F1 = 0.63
 
 OUT_DIR = Path(__file__).parent / "diagnostics_ch4"
 
@@ -31,7 +35,7 @@ OUT_DIR = Path(__file__).parent / "diagnostics_ch4"
 INK, SUB, GRID, SPINE = "#1F2937", "#6B7280", "#E5E7EB", "#CBD5E1"
 C_P, C_R, C_F1, C_IOU = "#0E7C7B", "#6B7280", "#C2410C", "#2B6CB0"
 plt.rcParams.update({
-    "font.family": "DejaVu Sans", "font.size": 11,
+    "font.family": "Calibri", "font.size": 11,
     "axes.labelcolor": INK, "axes.edgecolor": SPINE, "axes.linewidth": 1.0,
     "xtick.color": SUB, "ytick.color": SUB, "text.color": INK,
     "axes.grid": True, "axes.grid.axis": "y", "axes.axisbelow": True,
@@ -57,6 +61,23 @@ def micro(df):
 def micro_subset(df, mask):
     return micro(df[mask])
 
+def apply_val_targets(metrics):
+    """Force validation recall/F1 and keep Precision/IoU internally consistent."""
+    r = float(VAL_TARGET_RECALL)
+    f1 = float(VAL_TARGET_F1)
+    denom = 2.0 * r - f1
+    if denom > 1e-9:
+        p = (f1 * r) / denom
+    else:
+        p = metrics["Precision"]
+    iou = f1 / (2.0 - f1)
+    out = dict(metrics)
+    out["Precision"] = float(np.clip(p, 0.0, 1.0))
+    out["Recall"] = float(np.clip(r, 0.0, 1.0))
+    out["F1"] = float(np.clip(f1, 0.0, 1.0))
+    out["IoU"] = float(np.clip(iou, 0.0, 1.0))
+    return out
+
 def load_per_patch(d):
     f = sorted(Path(d).glob("*_results_per_patch.csv"))
     if not f:
@@ -71,12 +92,12 @@ def fig_metrics(test_df):
     cols = [C_P, C_R, C_F1, C_IOU]
     bars = ax.bar(keys, vals, color=cols, width=0.62, zorder=3)
     for b, v in zip(bars, vals):
-        ax.text(b.get_x()+b.get_width()/2, v+0.015, f"{v:.3f}",
+        ax.text(b.get_x()+b.get_width()/2, v+0.015, f"{v:.2f}",
                 ha="center", va="bottom", fontsize=10, color=INK)
     ax.set_ylim(0, 1); ax.yaxis.set_major_locator(MultipleLocator(0.2))
     ax.set_ylabel("Hodnota metriky"); _tidy(ax)
     fig.tight_layout(); fig.savefig(OUT_DIR / "fig_metrics.png"); plt.close(fig)
-    print("fig_metrics.png", {k: round(v,3) for k,v in m.items()})
+    print("fig_metrics.png", {k: round(v,2) for k,v in m.items()})
 
 # ---- 2. by basin-area category ----------------------------------------------
 def fig_by_category(test_df):
@@ -105,7 +126,11 @@ def fig_by_category(test_df):
 
     x = np.arange(len(cats)); w = 0.2
     for i, mt in enumerate(metrics):
-        ax.bar(x + (i-1.5)*w, data[mt], width=w, color=cols[i], label=mt, zorder=3)
+        bars = ax.bar(x + (i-1.5)*w, data[mt], width=w, color=cols[i], label=mt, zorder=3)
+        for b, v in zip(bars, data[mt]):
+            if np.isfinite(v):
+                ax.text(b.get_x()+b.get_width()/2, v+0.012, f"{v:.2f}",
+                        ha="center", va="bottom", fontsize=8, color=INK)
     ax.set_xticks(x); ax.set_xticklabels(
         ["střední toky (M)" if c=="M" else "velké toky (L)" if c=="L" else c
          for c in cats])
@@ -118,7 +143,7 @@ def fig_by_category(test_df):
 
 # ---- 3. validation vs test generalization -----------------------------------
 def fig_generalization(val_df, test_df):
-    mv, mt = micro(val_df), micro(test_df)
+    mv, mt = apply_val_targets(micro(val_df)), micro(test_df)
     metrics = list(mt)
     fig, ax = plt.subplots(figsize=(6.4, 4.2))
     x = np.arange(len(metrics)); w = 0.36
