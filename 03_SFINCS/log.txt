@@ -1,0 +1,48 @@
+Build-Revision: $Rev: v2.4.0 Galibier Release
+Build-Date: $Date: 2026-06-11
+
+------ Preparing model simulation --------
+
+Reading input file ...
+Info    : input grid interpreted as projected coordinates
+Info    : turning off Coriolis
+Info    : no Coriolis, as latitude is not specified in sfincs.inp
+Info    : running SFINCS with regular bathymetry
+Info    : storing maximum depth in subgrid cell for hmax output
+Info    : turning on process: Viscosity
+Info    : turning on advection
+Info    : advection scheme : first-order upwind
+Reading meteo data ...
+Preparing domain ...
+Info    : using regular mesh
+Info    : reading index file sfincs.ind
+Info    : reading mask file : sfincs.msk
+------------------------------------------
+Computational mesh
+------------------------------------------
+Number of active z points      :  12742797
+Number of active u/v points    :  25474899
+Info    : viscosity - nuvisc  =  0.100E+00
+Reading dep file : sfincs.dep
+Info    : reading roughness file sfincs.manning
+Info    : reading weir file
+Info    : 0 structure u/v points found
+Info    : reading discharges
+
+------------------------------------------
+Processes
+------------------------------------------
+Subgrid topography   : no
+Quadtree refinement  : no
+Advection            : yes
+Viscosity            : yes
+Coriolis             : no
+Wind                 : no
+Atmospheric pressure : no
+Precipitation        : no
+Infiltration         : no
+SnapWave             : no
+Wave paddles         : no
+------------------------------------------
+
+Initializing output ...
