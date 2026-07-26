@@ -107,7 +107,7 @@ WEIR_CD    = 0.6     # weir discharge coefficient (par1), SFINCS default
 SKIP_EXISTING = True
 
 # --- Steady-flow run ----------------------------------------
-SIM_HOURS   = 48                  # constant-Q run length; check steadiness
+SIM_HOURS   = 66                  # constant-Q run length; check steadiness
 TSTART      = "20260101 000000"   # sfincs.inp datetime format
 OUTPUT_DT_S = 3600                # map output interval [s]
 
