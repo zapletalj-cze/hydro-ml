@@ -77,7 +77,7 @@ AOI_GPKG        = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detect
 DSM_TIF         = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\SFINCS_model\dtm\COP_DSM_10m_Wistula.tif")      # elevation, EGM2008, 10 m
 WORLDCOVER_TIF  = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\SFINCS_model\landuse\ESA_WorldCover_2021_2180_c.tif")   # ESA WorldCover classes
 DISCHARGE_GPKG  = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\SFINCS_model\bc_upstream\bc_upstream.gpkg")  # see format above
-LEVEES_GPKG     = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\SFINCS_model\levees\levee_segments_z.gpkg")  # levee segments with z (script 15)
+LEVEES_GPKG     = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\SFINCS_model\levees\levee_segments_model_only.gpkg")  # levee segments with z (script 15)
 
 # Optional: polygon marking the downstream edge where water may leave the
 # domain (outflow). If None, the WHOLE edge of the active domain becomes
@@ -104,10 +104,10 @@ WEIR_CD    = 0.6     # weir discharge coefficient (par1), SFINCS default
 # --- Rebuild control ----------------------------------------
 # True: a model whose sfincs.inp + sfincs.dep already exist is left untouched,
 # so a failed second model can be retried without rebuilding the first.
-SKIP_EXISTING = True
+SKIP_EXISTING = False
 
 # --- Steady-flow run ----------------------------------------
-SIM_HOURS   = 48                  # constant-Q run length; check steadiness
+SIM_HOURS   = 65                  # constant-Q run length; check steadiness
 TSTART      = "20260101 000000"   # sfincs.inp datetime format
 OUTPUT_DT_S = 3600                # map output interval [s]
 
@@ -216,7 +216,8 @@ def prepare_levees(path):
     if Z_COLUMN in gdf.columns:
         if Z_COLUMN != "z":
             gdf = gdf.rename(columns={Z_COLUMN: "z"})
-        has_z = gdf["z"].notna()
+        gdf["z"] = pd.to_numeric(gdf["z"], errors="coerce")
+        has_z = gdf["z"].notna() & (gdf["z"] > 0)
     else:
         gdf["z"] = np.nan
         has_z = pd.Series(False, index=gdf.index)
@@ -367,7 +368,7 @@ def build_model(root, with_levees, dis_gdf, dis_ts, levees_z, levees_noz, reclas
         "tstart":   t0.strftime(fmt),
         "tstop":    t1.strftime(fmt),
         "dtout":    OUTPUT_DT_S,
-        "dtmaxout": SIM_HOURS * 3600,   # zsmax over the whole run
+        "dtmaxout": SIM_HOURS * 3600, 
         "alpha":    0.5,
     })
 
