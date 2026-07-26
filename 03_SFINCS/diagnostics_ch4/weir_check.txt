@@ -1,0 +1,19 @@
+grid: x0=586240.0 y0=479240.0 dx=10.0 dy=10.0 mmax=6399 nmax=4047 rotation=0.0
+grid extent: x [586240.0 .. 650230.0]  y [479240.0 .. 519710.0]
+weirfile referenced: sfincs.weir (exists: True)
+weirfile lines: 573
+--- first 8 lines ---
+weir01
+3 4
+   640555.0    488265.0 0.0 0.6
+   640525.0    488245.0 0.0 0.6
+   640435.0    488255.0 0.0 0.6
+weir02
+6 4
+   630385.0    497895.0 0.0 0.6
+blocks (names): 75 | coordinate rows: 423 | unparsable rows: 0
+x range: 587275.0 .. 640555.0
+y range: 488245.0 .. 515010.8
+z range: 0.00 .. 0.00
+vertices inside grid extent: 423 / 423
+vertices inside if x/y SWAPPED: 0 / 423
