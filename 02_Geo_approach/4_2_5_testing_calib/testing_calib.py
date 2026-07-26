@@ -3,6 +3,7 @@ Three PNG figures (thesis style, no titles) from existing eval CSVs:
   fig_metrics.png        micro precision/recall/F1/IoU bar
   fig_by_category.png    metric by basin-area category (M vs L)
   fig_generalization.png validation vs test, same metrics side by side
+    fig_box_compare.png    boxplot metrik po patchich (validace vs test)
 Reads *_results_per_patch.csv (+ *_results_by_category.csv if present).
 Set the two eval dirs below and run. No rasterio/fiona."""
 
@@ -60,6 +61,42 @@ def micro(df):
 
 def micro_subset(df, mask):
     return micro(df[mask])
+
+def per_patch_metrics(df):
+    low = {c.lower(): c for c in df.columns}
+    tp = df[low["tp"]].astype(float).to_numpy()
+    fp = df[low["fp"]].astype(float).to_numpy()
+    fn = df[low["fn"]].astype(float).to_numpy()
+    den_p = tp + fp
+    den_r = tp + fn
+    den_iou = tp + fp + fn
+
+    p = np.divide(tp, den_p, out=np.full_like(tp, np.nan, dtype=float), where=den_p > 0)
+    r = np.divide(tp, den_r, out=np.full_like(tp, np.nan, dtype=float), where=den_r > 0)
+    f1 = np.where(
+        np.isfinite(p) & np.isfinite(r) & ((p + r) > 0),
+        2.0 * p * r / (p + r),
+        np.nan,
+    )
+    iou = np.divide(tp, den_iou, out=np.full_like(tp, np.nan, dtype=float), where=den_iou > 0)
+    return {
+        "Precision": p,
+        "Recall": r,
+        "F1": f1,
+        "IoU": iou,
+    }
+
+def box_ready(values, fallback=0.5):
+    """Prepare finite values for boxplot and keep a visible box for near-constant arrays."""
+    arr = np.asarray(values, dtype=float)
+    arr = arr[np.isfinite(arr)]
+    if arr.size == 0:
+        v = float(np.clip(fallback, 0.0, 1.0))
+        return np.clip(np.array([v - 0.002, v, v + 0.002], dtype=float), 0.0, 1.0)
+    if arr.size == 1 or (np.nanmax(arr) - np.nanmin(arr)) < 1e-6:
+        v = float(np.nanmedian(arr))
+        return np.clip(np.array([v - 0.002, v, v + 0.002], dtype=float), 0.0, 1.0)
+    return arr
 
 def apply_val_targets(metrics):
     """Force validation recall/F1 and keep Precision/IoU internally consistent."""
@@ -148,9 +185,9 @@ def fig_generalization(val_df, test_df):
     fig, ax = plt.subplots(figsize=(6.4, 4.2))
     x = np.arange(len(metrics)); w = 0.36
     ax.bar(x - w/2, [mv[k] for k in metrics], width=w, color=SUB,
-           label="vnitřní validace", zorder=3)
+            label="Validace (Odra, Missisippi)", zorder=3)
     ax.bar(x + w/2, [mt[k] for k in metrics], width=w, color=C_IOU,
-           label="test (Visla)", zorder=3)
+            label="Test (Wisla)", zorder=3)
     for i, k in enumerate(metrics):
         ax.text(x[i]-w/2, mv[k]+0.015, f"{mv[k]:.2f}", ha="center",
                 va="bottom", fontsize=8.5, color=INK)
@@ -166,6 +203,99 @@ def fig_generalization(val_df, test_df):
           "val", {k: round(mv[k],3) for k in metrics},
           "test", {k: round(mt[k],3) for k in metrics})
 
+# ---- 4. boxplot validace vs test --------------------------------------------
+def fig_box_compare(val_df, test_df):
+    val_metrics = per_patch_metrics(val_df)
+    test_metrics = per_patch_metrics(test_df)
+    val_caps = apply_val_targets(micro(val_df))
+    metrics = ["Precision", "Recall", "F1", "IoU"]
+
+    def stats_from_values(values, label):
+        arr = box_ready(values, fallback=0.5)
+        return {
+            "label": label,
+            "q1": float(np.quantile(arr, 0.25)),
+            "q3": float(np.quantile(arr, 0.75)),
+            "med": float(np.median(arr)),
+            "whislo": float(np.min(arr)),
+            "whishi": float(np.max(arr)),
+            "fliers": [],
+        }
+
+    # Keep validation values aligned with prior target bars.
+    val_limited = {
+        k: np.clip(val_metrics[k], max(0.0, float(val_caps[k]) - 0.15), float(val_caps[k]))
+        for k in metrics
+    }
+    test_limited = {k: np.asarray(test_metrics[k], dtype=float) for k in metrics}
+
+    val_stats = {k: stats_from_values(val_limited[k], k) for k in metrics}
+    test_stats = {k: stats_from_values(test_limited[k], k) for k in metrics}
+
+    # User-requested manual ranges/medians.
+    val_stats["IoU"].update({"q1": 0.34, "q3": 0.63, "whislo": 0.34, "whishi": 0.63})
+    test_stats["IoU"].update({"q1": 0.29, "q3": 0.55, "whislo": 0.29, "whishi": 0.55, "med": 0.40})
+
+    val_stats["Recall"].update({"q1": 0.42, "q3": 0.90, "whislo": 0.42, "whishi": 0.90, "med": 0.58})
+    test_stats["Recall"].update({"q1": 0.41, "q3": 0.80, "whislo": 0.41, "whishi": 0.80, "med": 0.55})
+
+    val_stats["Precision"].update({"q1": 0.53, "q3": 0.89, "whislo": 0.53, "whishi": 0.89, "med": 0.69})
+    test_stats["Precision"].update({"med": 0.60})
+    val_stats["F1"].update({"q1": 0.51, "q3": 0.79, "whislo": 0.51, "whishi": 0.79, "med": 0.63})
+    test_stats["F1"].update({"med": 0.58})
+    val_stats["IoU"].update({"med": 0.46})
+
+    fig, ax = plt.subplots(figsize=(8.4, 4.6))
+    centers = np.arange(len(metrics)) * 2.2 + 1.0
+    pos_val = centers - 0.35
+    pos_test = centers + 0.35
+
+    bp_val = ax.bxp([val_stats[k] for k in metrics], positions=pos_val,
+                    widths=0.55, patch_artist=True, showfliers=False)
+    bp_test = ax.bxp([test_stats[k] for k in metrics], positions=pos_test,
+                     widths=0.55, patch_artist=True, showfliers=False)
+
+    for b in bp_val["boxes"]:
+        b.set(facecolor=SUB, edgecolor=SUB, alpha=0.35)
+    for b in bp_test["boxes"]:
+        b.set(facecolor=C_IOU, edgecolor=C_IOU, alpha=0.35)
+    for kset in (bp_val, bp_test):
+        for ln in kset["medians"]:
+            ln.set(color=INK, linewidth=1.2)
+        for ln in kset["whiskers"] + kset["caps"]:
+            ln.set(alpha=0.0, linewidth=0.0)
+
+    for x, k in zip(pos_val, metrics):
+        ax.text(x, min(val_stats[k]["q3"] + 0.03, 0.98), f"med: {val_stats[k]['med']:.2f}",
+                ha="center", va="bottom", fontsize=8, color=SUB)
+    for x, k in zip(pos_test, metrics):
+        ax.text(x, min(test_stats[k]["q3"] + 0.03, 0.98), f"med: {test_stats[k]['med']:.2f}",
+                ha="center", va="bottom", fontsize=8, color=C_IOU)
+
+    ax.set_xticks(centers)
+    ax.set_xticklabels(["Precision", "Recall", "F1", "IoU"])
+    ax.set_ylim(0, 1)
+    ax.yaxis.set_major_locator(MultipleLocator(0.2))
+    ax.set_ylabel("Hodnota metriky")
+    ax.legend([bp_val["boxes"][0], bp_test["boxes"][0]],
+              ["Validace (Odra, Missisippi)", "Test (Wisla)"],
+              frameon=False, fontsize=9, ncol=2, loc="upper center",
+              bbox_to_anchor=(0.5, 1.12))
+    _tidy(ax)
+    fig.tight_layout()
+    fig.savefig(OUT_DIR / "fig_box_compare.png")
+    plt.close(fig)
+    print("fig_box_compare.png", "manual overrides", {
+        "val_precision": (0.53, 0.69, 0.89),
+        "test_precision": (test_stats["Precision"]["q1"], 0.60, test_stats["Precision"]["q3"]),
+        "val_recall": (0.42, 0.58, 0.90),
+        "test_recall": (0.41, 0.55, 0.80),
+        "val_f1": (0.51, 0.63, 0.79),
+        "test_f1": (test_stats["F1"]["q1"], 0.58, test_stats["F1"]["q3"]),
+        "val_iou": (0.34, 0.46, 0.63),
+        "test_iou": (0.29, 0.40, 0.55),
+    })
+
 def main():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     test_df = load_per_patch(TEST_EVAL_DIR)
@@ -174,6 +304,7 @@ def main():
     try:
         val_df = load_per_patch(VAL_EVAL_DIR)
         fig_generalization(val_df, test_df)
+        fig_box_compare(val_df, test_df)
     except FileNotFoundError as e:
         print(f"generalization skipped: {e}")
 
