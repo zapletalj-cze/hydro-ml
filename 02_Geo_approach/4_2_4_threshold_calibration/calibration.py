@@ -30,7 +30,7 @@ PATCHES_DIRS = {   # region value in metadata -> patches folder
     "USA": Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\patches_v02_USA\patches"),
 }
 
-OUT_DIR   = Path(__file__).parent / "diagnostics_ch4"
+OUT_DIR   = Path(__file__).parent
 DEVICE    = "cuda" if torch.cuda.is_available() else "cpu"
 BATCH_SIZE = 16
 
@@ -45,8 +45,8 @@ THRESHOLDS = np.round(np.arange(0.05, 0.96, 0.05), 2)
 REFERENCE_THRESHOLD = 0.5
 
 # ---- style ------------------------------------------------------------------
-INK, SECOND, GRIDCOL, SPINE = "#1F2937", "#6B7280", "#E5E7EB", "#CBD5E1"
-C_DICE, C_F1 = "#0E7C7B", "#C2410C"
+INK, SECOND, GRIDCOL, SPINE = "#1A1A1A", "#555555", "#E5E7EB", "#BBBBBB"
+C_CURVE, C_OPT = "#5A5A5A", "#1A1A1A"
 plt.rcParams.update({
     "font.family": "DejaVu Sans", "font.size": 11,
     "axes.labelsize": 11, "axes.labelcolor": INK,
@@ -107,22 +107,17 @@ def load_state_dict_compat(model, state_dict):
                            f"Unexpected: {unexpected}")
 
 
-def _extract_model_state(ckpt):
-    if not isinstance(ckpt, dict):
-        return ckpt
-    for key in ("model_state", "model_state_dict", "state_dict"):
-        if key in ckpt:
-            return ckpt[key]
-    return ckpt
-
-
 def build_model():
     model = smp.Segformer(encoder_name=SEGFORMER_BACKBONE,
                           encoder_weights=None,   # overwritten by checkpoint
                           in_channels=3, classes=1, activation=None)
     model = adapt_first_conv_segformer(model, N_INPUT_CHANNELS)
     ckpt = torch.load(TRAIN_OUTPUT_DIR / "best_model.pt", map_location=DEVICE)
-    load_state_dict_compat(model, _extract_model_state(ckpt))
+    if isinstance(ckpt, dict) and "model_state_dict" in ckpt:
+        ckpt = ckpt["model_state_dict"]
+    elif isinstance(ckpt, dict) and "state_dict" in ckpt:
+        ckpt = ckpt["state_dict"]
+    load_state_dict_compat(model, ckpt)
     return model.to(DEVICE).eval()
 
 
@@ -229,11 +224,11 @@ def main():
 
     # PR figure
     fig, ax = plt.subplots(figsize=(6.6, 4.8))
-    ax.plot(r, p, color=C_DICE, lw=2.2, marker="o", markersize=3.5,
-            markerfacecolor="white", markeredgecolor=C_DICE)
+    ax.plot(r, p, color=C_CURVE, lw=1.8, marker="o", markersize=3.2,
+            markerfacecolor="white", markeredgecolor=C_CURVE)
     for i, label, color, xytext in (
-        (ref_i, f"práh {REFERENCE_THRESHOLD}", SECOND, (0, -14)),
-        (best_i, f"práh {THRESHOLDS[best_i]:.2f} (opt.)", C_F1, (0, 12)),
+        (ref_i, f"práh {REFERENCE_THRESHOLD}", "#999999", (0, -14)),
+        (best_i, f"práh {THRESHOLDS[best_i]:.2f} (opt.)", C_OPT, (0, 12)),
     ):
         ax.scatter([r[i]], [p[i]], s=60, zorder=5, color=color)
         ax.annotate(label, (r[i], p[i]), textcoords="offset points",
