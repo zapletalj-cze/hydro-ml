@@ -113,10 +113,14 @@ def build_model():
                           in_channels=3, classes=1, activation=None)
     model = adapt_first_conv_segformer(model, N_INPUT_CHANNELS)
     ckpt = torch.load(TRAIN_OUTPUT_DIR / "best_model.pt", map_location=DEVICE)
-    if isinstance(ckpt, dict) and "model_state_dict" in ckpt:
-        ckpt = ckpt["model_state_dict"]
-    elif isinstance(ckpt, dict) and "state_dict" in ckpt:
-        ckpt = ckpt["state_dict"]
+    # Support multiple checkpoint layouts used across training scripts.
+    if isinstance(ckpt, dict):
+        for key in ("model_state", "model_state_dict", "state_dict", "model"):
+            if key in ckpt and isinstance(ckpt[key], dict):
+                ckpt = ckpt[key]
+                break
+    if not isinstance(ckpt, dict):
+        raise RuntimeError("Unsupported checkpoint format in best_model.pt")
     load_state_dict_compat(model, ckpt)
     return model.to(DEVICE).eval()
 
