@@ -113,14 +113,10 @@ def build_model():
                           in_channels=3, classes=1, activation=None)
     model = adapt_first_conv_segformer(model, N_INPUT_CHANNELS)
     ckpt = torch.load(TRAIN_OUTPUT_DIR / "best_model.pt", map_location=DEVICE)
-    # Support multiple checkpoint layouts used across training scripts.
-    if isinstance(ckpt, dict):
-        for key in ("model_state", "model_state_dict", "state_dict", "model"):
-            if key in ckpt and isinstance(ckpt[key], dict):
-                ckpt = ckpt[key]
-                break
-    if not isinstance(ckpt, dict):
-        raise RuntimeError("Unsupported checkpoint format in best_model.pt")
+    if isinstance(ckpt, dict) and "model_state_dict" in ckpt:
+        ckpt = ckpt["model_state_dict"]
+    elif isinstance(ckpt, dict) and "state_dict" in ckpt:
+        ckpt = ckpt["state_dict"]
     load_state_dict_compat(model, ckpt)
     return model.to(DEVICE).eval()
 
@@ -171,6 +167,8 @@ def main():
         images, labels = [], []
         for _, row in batch_rows.iterrows():
             pdir = PATCHES_DIRS.get(str(row["region"]))
+            if pdir is not None and not (pdir / f"{row['patch_id']}.npz").exists()                     and (pdir / "patches" / f"{row['patch_id']}.npz").exists():
+                pdir = pdir / "patches"
             if pdir is None or not (pdir / f"{row['patch_id']}.npz").exists():
                 n_missing += 1
                 continue
@@ -199,7 +197,7 @@ def main():
 
     if n_used == 0:
         raise RuntimeError("No patches processed.")
-    print(f"patches used: {n_used} (missing: {n_missing})")
+    print(f"patches used: {n_used} (missing: {n_missing}) - MUST be ~8503 total; if ~5686 or ~2817, one region was skipped")
 
     eps = 1e-9
     p = tp / (tp + fp + eps)
