@@ -94,12 +94,12 @@ RES_M    = 10.0
 
 # --- Levee crest --------------------------------------------
 Z_COLUMN   = "z"     # crest elevation column on the levee lines (EGM2008 metres)
-DZ_DEFAULT = 0.9     # fallback: crest = DSM + DZ_DEFAULT where z is missing.
-                     # 0.9 m = median dz over DSM measured from the ATL08 crest
+DZ_DEFAULT = 1.8     # fallback: crest = DSM + DZ_DEFAULT where z is missing.
+                     # 1.8 m = median dz over DSM measured from the ATL08 crest
                      # points after removing structures and vegetation, NOT an
                      # arbitrary value. Normally unused: script 15 assigns z to
                      # every segment, so the fallback path stays empty.
-WEIR_CD    = 0.6     # weir discharge coefficient (par1), SFINCS default
+WEIR_CD    = 0.38     # weir discharge coefficient (par1), SFINCS default
 
 # --- Rebuild control ----------------------------------------
 # True: a model whose sfincs.inp + sfincs.dep already exist is left untouched,
@@ -107,7 +107,7 @@ WEIR_CD    = 0.6     # weir discharge coefficient (par1), SFINCS default
 SKIP_EXISTING = True
 
 # --- Steady-flow run ----------------------------------------
-SIM_HOURS   = 66                  # constant-Q run length; check steadiness
+SIM_HOURS   = 70                  # constant-Q run length; check steadiness
 TSTART      = "20260101 000000"   # sfincs.inp datetime format
 OUTPUT_DT_S = 3600                # map output interval [s]
 
@@ -432,6 +432,7 @@ def main():
         print("double-clicking run.bat in each folder, or from a shell:")
         for r in roots:
             print(f'  pushd "{r}" && "{EXE_PATH}" & popd')
+        print(f'PowerShell helper: {Path(__file__).with_name("run_sfincs_models.ps1")}')
         print("Or set RUN_AFTER_BUILD = True to launch both from this script.")
 
     print("\nSteadiness check: compare zsmax at ~0.75*T and T; if they differ,")
