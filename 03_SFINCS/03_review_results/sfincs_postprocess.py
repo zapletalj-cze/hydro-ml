@@ -1,8 +1,6 @@
-
 """SFINCS postprocess in one pass: (1) georeferenced depth GeoTIFFs from
 sfincs_map.nc, (2) steadiness check of both runs, (3) baseline vs levees
-comparison statistics, (4) light thesis-style figures + sfincs_summary.json
-"""
+comparison statistics, (4) light thesis-style figures + sfincs_summary.json."""
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -32,8 +30,10 @@ DIFF_MIN_M    = 0.05     # a cell counts as changed if |dz| exceeds this
 NODATA        = -9999.0
 
 OUT_DIR = Path(__file__).parent / "diagnostics_ch4"
+SKIP_EXISTING_TIFS = True   # keep tifs already styled in QGIS; stats always fresh
 
 INK, SUB, GRID, SPINE = "#1A1A1A", "#555555", "#E5E7EB", "#BBBBBB"
+C_LEVEES = "#4477AA"   # muted academic blue for the levees run
 plt.rcParams.update({
     "font.family": "DejaVu Sans", "font.size": 11,
     "axes.labelcolor": INK, "axes.edgecolor": SPINE, "axes.linewidth": 1.0,
@@ -87,7 +87,16 @@ def orient(arr2d, x2d, y2d):
     return arr2d, x2d, y2d
 
 
-def write_gtiff(path, arr2d, inp):
+def write_gtiff(path, arr2d, inp, source_nc=None):
+    path = Path(path)
+    if SKIP_EXISTING_TIFS and path.exists():
+        if source_nc is not None and \
+                path.stat().st_mtime < Path(source_nc).stat().st_mtime:
+            print(f"  WARNING: {path.name} is OLDER than {Path(source_nc).name} "
+                  f"- map data stale vs stats; delete the tif to refresh")
+        else:
+            print(f"  skip existing {path.name}")
+        return
     rows, cols = arr2d.shape
     ds = gdal.GetDriverByName("GTiff").Create(
         str(path), cols, rows, 1, gdal.GDT_Float32,
@@ -117,9 +126,9 @@ def process_run(name, root):
     hmax = zsmax - zb
     hmax[hmax < MIN_DEPTH_M] = np.nan
     hmax_o, _, _ = orient(hmax.copy(), x2d.copy(), y2d.copy())
-    write_gtiff(root / f"hmax_{name}.tif", hmax_o, inp)
+    write_gtiff(root / f"hmax_{name}.tif", hmax_o, inp, source_nc=nc)
     zs_o, _, _ = orient(zsmax.copy(), x2d.copy(), y2d.copy())
-    write_gtiff(root / f"zsmax_{name}.tif", zs_o, inp)
+    write_gtiff(root / f"zsmax_{name}.tif", zs_o, inp, source_nc=nc)
 
     wet = np.isfinite(hmax)
     stats = {
@@ -182,7 +191,8 @@ def compare(hb, hl, zsb, zsl, area_m2, inp):
     # difference raster for maps (levees - baseline water level, common wet)
     dz_o, _, _ = orient(dz.copy(),
                         read_var_x[0].copy(), read_var_y[0].copy())
-    write_gtiff(OUT_DIR / "dz_levees_minus_baseline.tif", dz_o, inp)
+    write_gtiff(OUT_DIR / "dz_levees_minus_baseline.tif", dz_o, inp,
+                source_nc=RUN_LEVEES / "sfincs_map.nc")
     return comp
 
 
@@ -193,11 +203,11 @@ def figures(dfs):
     allrows.to_csv(OUT_DIR / "steadiness.csv", index=False)
 
     fig, ax = plt.subplots(figsize=(6.6, 4.0))
-    for name, ls in (("baseline", "-"), ("levees", "--")):
+    for name, ls, col in (("baseline", "-", INK), ("levees", "--", C_LEVEES)):
         sub = allrows[allrows["run"] == name]
-        ax.plot(sub["hour"], sub["dz_max_m"], lw=1.6, color=INK, ls=ls,
+        ax.plot(sub["hour"], sub["dz_max_m"], lw=1.0, color=col, ls=ls,
                 label="bez hrází" if name == "baseline" else "s hrázemi")
-    ax.axhline(STEADY_DZ_M, color=SUB, ls=":", lw=1.1,
+    ax.axhline(STEADY_DZ_M, color=SUB, ls=":", lw=0.9,
                label=f"práh ustálení {STEADY_DZ_M} m")
     ax.set_yscale("log")
     ax.set_xlabel("Čas simulace [h]")
@@ -210,9 +220,9 @@ def figures(dfs):
     plt.close(fig)
 
     fig, ax = plt.subplots(figsize=(6.6, 4.0))
-    for name, ls in (("baseline", "-"), ("levees", "--")):
+    for name, ls, col in (("baseline", "-", INK), ("levees", "--", C_LEVEES)):
         sub = allrows[allrows["run"] == name]
-        ax.plot(sub["hour"], sub["wet_area_km2"], lw=1.6, color=INK, ls=ls,
+        ax.plot(sub["hour"], sub["wet_area_km2"], lw=1.0, color=col, ls=ls,
                 label="bez hrází" if name == "baseline" else "s hrázemi")
     ax.set_xlabel("Čas simulace [h]")
     ax.set_ylabel("Zatopená plocha [km²]")
