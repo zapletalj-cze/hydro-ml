@@ -19,7 +19,7 @@ from osgeo import gdal, osr
 gdal.UseExceptions()
 
 # ---- CONFIG -----------------------------------------------------------------
-MODEL_ROOT = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\SFINCS_model\model_RP100")
+MODEL_ROOT = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\SFINCS_model\model_RP10")
 RUN_BASELINE = MODEL_ROOT / "sfincs_baseline"
 RUN_LEVEES   = MODEL_ROOT / "sfincs_levees"
 
@@ -29,7 +29,7 @@ STEADY_DZ_M   = 0.05     # steady if max hourly |dz| over wet cells < this
 DIFF_MIN_M    = 0.05     # a cell counts as changed if |dz| exceeds this
 NODATA        = -9999.0
 
-OUT_DIR = Path(__file__).parent / "diagnostics_ch4"
+OUT_DIR = Path(__file__).parent / "diag_RP10"
 SKIP_EXISTING_TIFS = True   # keep tifs already styled in QGIS; stats always fresh
 
 INK, SUB, GRID, SPINE = "#1A1A1A", "#555555", "#E5E7EB", "#BBBBBB"

@@ -1,0 +1,52 @@
+{
+  "rules": {
+    "cand_dist_m": 30.0,
+    "ring_m": [
+      50.0,
+      200.0
+    ],
+    "levee_excl_m": 30.0,
+    "canopy_max_m": 2.0,
+    "min_ref_pts": 10,
+    "prom_cap_m": 8.0
+  },
+  "input": {
+    "n_points": 940710,
+    "height_col": "h_te_ortho",
+    "canopy_col": null
+  },
+  "n_reference": 81677,
+  "n_candidates": 11519,
+  "datum_offset_m": 0.010076725183651547,
+  "datum_offset_n": 5000,
+  "n_undecided": 1015,
+  "sweep": [
+    {
+      "threshold": 0.3,
+      "n_selected": 5258,
+      "dtm_n": 5258,
+      "dtm_median_m": -1.3009774489247334,
+      "dtm_mae_m": 1.696147712373722,
+      "dtm_p20_m": -3.0820607317730633,
+      "dtm_p80_m": -0.16926851101238177
+    },
+    {
+      "threshold": 0.5,
+      "n_selected": 4190,
+      "dtm_n": 4190,
+      "dtm_median_m": -1.5064443310650617,
+      "dtm_mae_m": 1.7805978339994122,
+      "dtm_p20_m": -3.14509667546842,
+      "dtm_p80_m": -0.19542348860645684
+    },
+    {
+      "threshold": 0.7,
+      "n_selected": 3370,
+      "dtm_n": 3370,
+      "dtm_median_m": -1.6657367226229667,
+      "dtm_mae_m": 1.8372059885454461,
+      "dtm_p20_m": -3.1871171404634864,
+      "dtm_p80_m": -0.2074784860562771
+    }
+  ]
+}

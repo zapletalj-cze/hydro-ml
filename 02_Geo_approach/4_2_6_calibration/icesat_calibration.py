@@ -23,8 +23,8 @@ from osgeo import gdal
 gdal.UseExceptions()
 
 # ---- CONFIG -----------------------------------------------------------------
-POINTS_GPKG   = Path(r"D:\PATH\TO\atl08_points_200m.gpkg")        # FILL: your 200 m export
-DTM_TIF       = Path(r"D:\PATH\TO\DTM_PL_1m_KRON86.tif")          # FILL: same as script 28
+POINTS_GPKG   = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sat_lidar\01_data\ICE_SAT\at08_terrain_near_levees.gpkg")        # FILL: your 200 m export
+DTM_TIF       = Path(r"B:\01_Projects\154_Poland_Flood_v3\01_MD\01_HAZARD\01_DTM\1m\Poland_dem_1m.tif")          # FILL: same as script 28
 SEGMENTS_GPKG = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sat_lidar\01_data\ICE_SAT\ATL08\processing\levee_segments_z.gpkg")
 BDOT_GPKG     = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\levees_selection\WalyNaspy.gpkg")  # optional, reference levees
 
