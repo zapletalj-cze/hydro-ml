@@ -24,6 +24,9 @@ gdal.UseExceptions()
 DTM_TIF = Path(r"D:\PATH\TO\DTM_PL_1m_KRON86.tif")   # 500 GB mosaic, EPSG:2180 - FILL IN
 CREST_GPKG = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sat_lidar\01_data\ICE_SAT\ATL08\atl08_terrain_heights_updated_crest.gpkg")
 SEGMENTS_GPKG = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sat_lidar\01_data\ICE_SAT\ATL08\processing\levee_segments_z.gpkg")
+# near-levee points BEFORE crest selection (the 12 819-point file), used ONLY
+# for the datum-offset estimate; crest validation stays on CREST_GPKG
+GROUND_GPKG = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sat_lidar\01_data\ICE_SAT\ATL08\atl08_terrain_heights_updated.gpkg")
 
 CREST_WIN_M   = 5.0    # crest sampling: max DTM within this radius (local ridge)
 GROUND_WIN_M  = 1.0    # ground sampling: median DTM within this radius
@@ -113,16 +116,34 @@ def main():
         pts = pts.set_crs(epsg=2180) if pts.crs is None else pts.to_crs(epsg=2180)
     c_h = pick(pts.columns, "h_te_ortho", "h_ortho", "h", "height_ortho")
     c_crest = pick(pts.columns, "crest_flag", "is_crest", "crest")
-    c_canopy = pick(pts.columns, "canopy_height", "canopy", "veg_height")
+    c_canopy = pick(pts.columns, "canopy_height", "canopy", "veg_height",
+                    "canopy_h")
     c_dsm = pick(pts.columns, "dsm", "dsm_z", "z_dsm", "glo30")
     if c_h is None:
         raise KeyError(f"no ortho-height column found in {CREST_GPKG.name}; "
                        f"columns: {list(pts.columns)}")
 
+    def as_bool(v):
+        if isinstance(v, str):
+            return v.strip().lower() in ("1", "true", "t", "yes", "y")
+        try:
+            return bool(int(v))
+        except (TypeError, ValueError):
+            return bool(v)
+
+    report["input_inspection"] = {
+        "columns": list(map(str, pts.columns)),
+        "picked": {"height": c_h, "crest": c_crest,
+                   "canopy": c_canopy, "dsm": c_dsm},
+        "crest_value_counts": ({str(k): int(v) for k, v in
+                                pts[c_crest].value_counts().items()}
+                               if c_crest else "no crest column"),
+    }
+
     rows = []
     for _, r in pts.iterrows():
         x, y = r.geometry.x, r.geometry.y
-        is_crest = bool(r[c_crest]) if c_crest else False
+        is_crest = as_bool(r[c_crest]) if c_crest else False
         dtm_val = dtm.crest(x, y) if is_crest else dtm.ground(x, y)
         rows.append({"x": x, "y": y, "is_crest": is_crest,
                      "h_atl08": float(r[c_h]),
@@ -132,13 +153,51 @@ def main():
     pdf = pd.DataFrame(rows)
 
     # empirical datum offset: DTM(KRON86) - ATL08(EGM2008) on bare non-crest pts
-    bare = pdf[(~pdf["is_crest"]) & np.isfinite(pdf["dtm"])]
-    if c_canopy:
-        bare = bare[bare["canopy"] < CANOPY_MAX_M]
-    offset = float(np.nanmedian(bare["dtm"] - bare["h_atl08"])) if len(bare) \
-        else 0.0
+    # ---- datum offset from the pre-selection near-levee points ----
+    if GROUND_GPKG.exists():
+        gp = gpd.read_file(GROUND_GPKG, engine="pyogrio")
+        if gp.crs is None or gp.crs.to_epsg() != 2180:
+            gp = gp.set_crs(epsg=2180) if gp.crs is None \
+                else gp.to_crs(epsg=2180)
+        g_h = pick(gp.columns, "h_te_ortho", "h_ortho", "h", "height_ortho")
+        g_can = pick(gp.columns, "canopy_height", "canopy", "veg_height",
+                     "canopy_h")
+        g_crest = pick(gp.columns, "crest_flag", "is_crest", "crest")
+        if g_crest:
+            gp = gp[~gp[g_crest].map(as_bool)]
+        if g_can:
+            gp = gp[pd.to_numeric(gp[g_can], errors="coerce") < CANOPY_MAX_M]
+        grows = []
+        for _, r in gp.iterrows():
+            v = dtm.ground(r.geometry.x, r.geometry.y)
+            if np.isfinite(v):
+                grows.append(v - float(r[g_h]))
+        bare = pd.DataFrame({"d": grows})
+        report["input_inspection"]["ground_file"] = str(GROUND_GPKG.name)
+        report["input_inspection"]["ground_columns"] = list(map(str, gp.columns))
+        bare_diffs = bare["d"]
+    else:
+        report["input_inspection"]["ground_file"] = "MISSING: " + str(GROUND_GPKG)
+        bare = pdf[(~pdf["is_crest"]) & np.isfinite(pdf["dtm"])]
+        bare_diffs = bare["dtm"] - bare["h_atl08"]
+    canopy_used = True
+    n_crest_flag = int(pdf["is_crest"].sum())
+    report["input_inspection"]["n_points"] = int(len(pdf))
+    report["input_inspection"]["n_crest_true"] = n_crest_flag
+    report["input_inspection"]["n_dtm_valid"] = int(np.isfinite(pdf["dtm"]).sum())
+    if len(bare) < 200:
+        (OUT_DIR / "dtm_validation.json").write_text(
+            json.dumps(report, indent=2, ensure_ascii=False))
+        raise RuntimeError(
+            f"Offset estimation has only {len(bare)} points "
+            f"(crest_true={n_crest_flag}, dtm_valid="
+            f"{int(np.isfinite(pdf['dtm']).sum())}, canopy_filter="
+            f"{canopy_used}). See input_inspection in the partial JSON. "
+            f"Refusing to continue with offset 0.")
+    offset = float(np.nanmedian(bare_diffs))
     report["datum_offset_m"] = offset
     report["datum_offset_n"] = int(len(bare))
+    report["datum_offset_canopy_filter_used"] = canopy_used
     pdf["dtm_egm"] = pdf["dtm"] - offset
     pdf.to_csv(OUT_DIR / "dtm_points.csv", index=False)
 
