@@ -224,6 +224,46 @@ def main():
     sweep.to_csv(OUT_DIR / "crest_sweep.csv", index=False)
     report["sweep"] = sweep_rows
 
+    # per-point scatter: prominence vs difference to the axis-anchored DTM
+    # crest, over ALL decided candidates (not only selected ones)
+    scat_prom, scat_diff = [], []
+    for i in np.where(decided)[0]:
+        if i not in dtm_cache:
+            on_axis = nearest_points(_P(xy[i, 0], xy[i, 1]), axis)[1]
+            dtm_cache[i] = dtm.crest(on_axis.x, on_axis.y)
+        v = dtm_cache[i]
+        if np.isfinite(v):
+            scat_prom.append(prom[i])
+            scat_diff.append(h[i] - (v - offset))
+    pd.DataFrame({"prominence2d": scat_prom, "diff_dtm_m": scat_diff}
+                 ).to_csv(OUT_DIR / "crest_points_validation.csv", index=False)
+
+    fig, ax = plt.subplots(figsize=(6.6, 4.2))
+    ax.scatter(scat_prom, scat_diff, s=5, facecolors="none",
+               edgecolors="#8A8A8A", linewidths=0.4, alpha=0.5, zorder=2)
+    ax.axhline(0, color=INK, lw=0.9, zorder=3)
+    sp = np.asarray(scat_prom); sd = np.asarray(scat_diff)
+    bins = np.arange(0.0, min(8.0, np.nanmax(sp)) + 0.25, 0.25)
+    bmid, bmed = [], []
+    for b0, b1 in zip(bins[:-1], bins[1:]):
+        m = (sp >= b0) & (sp < b1)
+        if m.sum() >= 15:
+            bmid.append((b0 + b1) / 2)
+            bmed.append(np.median(sd[m]))
+    ax.plot(bmid, bmed, color=INK, lw=1.2, zorder=4,
+            label="medián po intervalech")
+    for thr in (0.2, 0.3, 0.5):
+        ax.axvline(thr, color="#BBBBBB", ls=":", lw=0.9, zorder=1)
+    ax.set_xlabel("Plošná prominence [m]")
+    ax.set_ylabel("Rozdíl vůči koruně z DTM [m]")
+    ax.legend(frameon=False)
+    for sdn in ("left", "bottom"):
+        ax.spines[sdn].set_color(SPINE)
+    ax.tick_params(length=0)
+    fig.tight_layout()
+    fig.savefig(OUT_DIR / "fig_crest_scatter.png")
+    plt.close(fig)
+
     # export new candidate set with prominence and per-threshold flags
     out = pts.loc[cand_idx, ["geometry"]].copy()
     out["h_ortho"] = h[cand_idx]
@@ -257,6 +297,7 @@ def main():
     plt.close(fig)
 
     print("written: crest_selection_sweep.json, crest_sweep.csv,")
+    print("         crest_points_validation.csv, fig_crest_scatter.png,")
     print("         crest_points_2d.gpkg, fig_crest_sweep.png")
 
 
