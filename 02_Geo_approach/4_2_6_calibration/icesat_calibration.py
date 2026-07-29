@@ -35,7 +35,7 @@ LEVEE_EXCL_M  = 30.0    # reference excludes points this close to any levee
 CANOPY_MAX_M  = 2.0
 MIN_REF_PTS   = 10      # rule 4: decision requires at least this many refs
 PROM_CAP_M    = 8.0     # rule 3b: structures (bridges) above this are dropped
-THRESHOLDS    = [0.3, 0.5, 0.7]
+THRESHOLDS    = [0.05, 0.1, 0.2, 0.3, 0.5, 0.7]
 
 CREST_WIN_M   = 5.0
 GROUND_WIN_M  = 1.0
