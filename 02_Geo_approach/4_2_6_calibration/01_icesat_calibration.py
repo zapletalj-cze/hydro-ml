@@ -23,8 +23,8 @@ from osgeo import gdal
 gdal.UseExceptions()
 
 # ---- CONFIG -----------------------------------------------------------------
-POINTS_GPKG   = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sat_lidar\01_data\ICE_SAT\at08_terrain_near_levees.gpkg")        # FILL: your 200 m export
-DTM_TIF       = Path(r"B:\01_Projects\154_Poland_Flood_v3\01_MD\01_HAZARD\01_DTM\1m\Poland_dem_1m.tif")          # FILL: same as script 28
+POINTS_GPKG   = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sat_lidar\01_data\ICE_SAT\at08_terrain_near_levees.gpkg")
+DTM_TIF       = Path(r"B:\01_Projects\154_Poland_Flood_v3\01_MD\01_HAZARD\01_DTM\1m\Poland_dem_1m.tif")
 SEGMENTS_GPKG = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sat_lidar\01_data\ICE_SAT\ATL08\processing\levee_segments_z.gpkg")
 BDOT_GPKG     = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\levees_selection\WalyNaspy.gpkg")  # optional, reference levees
 
@@ -40,7 +40,8 @@ THRESHOLDS    = [0.05, 0.1, 0.2, 0.3, 0.5, 0.7]
 CREST_WIN_M   = 5.0
 GROUND_WIN_M  = 1.0
 OFFSET_SAMPLE = 5000
-OUT_DIR = Path(__file__).parent / "diagnostics_ch4"
+OUT_DIR  = Path(__file__).parent / "diagnostics_ch4"   # figures + json + csv
+OUT_GPKG = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sat_lidar\01_data\ICE_SAT\ATL08\crest_points_2d.gpkg")  # set where the point layer should go
 
 INK, SUB, GRID, SPINE = "#1A1A1A", "#555555", "#E5E7EB", "#BBBBBB"
 plt.rcParams.update({
@@ -173,10 +174,38 @@ def main():
         (OUT_DIR / "crest_selection_sweep.json").write_text(
             json.dumps(report, indent=2))
         raise RuntimeError(f"offset from only {len(diffs)} points")
+    diffs = np.asarray(diffs, float)
     offset = float(np.median(diffs))
     report["datum_offset_m"] = offset
     report["datum_offset_n"] = int(len(diffs))
-    print(f"datum offset: {offset:+.2f} m from {len(diffs)} points")
+    report["datum_offset_spread"] = {
+        "mean_m": float(diffs.mean()), "std_m": float(diffs.std()),
+        "p20_m": float(np.percentile(diffs, 20)),
+        "p80_m": float(np.percentile(diffs, 80)),
+        "share_within_0_2_m": float((np.abs(diffs - offset) <= 0.2).mean()),
+        "share_within_0_5_m": float((np.abs(diffs - offset) <= 0.5).mean()),
+    }
+    pd.DataFrame({"dtm_minus_atl08_m": diffs}).to_csv(
+        OUT_DIR / "datum_offset_points.csv", index=False)
+    print(f"datum offset: {offset:+.2f} m from {len(diffs)} points, "
+          f"std {diffs.std():.2f} m")
+
+    fig, ax = plt.subplots(figsize=(6.2, 3.8))
+    lim = max(1.0, float(np.percentile(np.abs(diffs - offset), 99)) + 0.3)
+    ax.hist(np.clip(diffs, offset - lim, offset + lim),
+            bins=60, color="#C9C9C9", edgecolor=INK, linewidth=0.4)
+    ax.axvline(0, color=INK, lw=0.9, label="nulový rozdíl")
+    ax.axvline(offset, color=SUB, ls="--", lw=1.0,
+               label=f"medián {offset:+.2f} m")
+    ax.set_xlabel("Rozdíl DTM a terénní výšky ATL08 [m]")
+    ax.set_ylabel("Počet bodů")
+    ax.legend(frameon=False)
+    for sdn in ("left", "bottom"):
+        ax.spines[sdn].set_color(SPINE)
+    ax.tick_params(length=0)
+    fig.tight_layout()
+    fig.savefig(OUT_DIR / "fig_datum_offset_hist.png")
+    plt.close(fig)
 
     # 2D prominence for candidates
     tree = cKDTree(xy[is_ref])
@@ -273,7 +302,8 @@ def main():
         out[f"sel_{int(thr*100):03d}"] = (
             np.isfinite(prom[cand_idx]) & (prom[cand_idx] >= thr)
             & (prom[cand_idx] <= PROM_CAP_M))
-    out.to_file(OUT_DIR / "crest_points_2d.gpkg", driver="GPKG")
+    OUT_GPKG.parent.mkdir(parents=True, exist_ok=True)
+    out.to_file(OUT_GPKG, driver="GPKG")
 
     (OUT_DIR / "crest_selection_sweep.json").write_text(
         json.dumps(report, indent=2, ensure_ascii=False))
