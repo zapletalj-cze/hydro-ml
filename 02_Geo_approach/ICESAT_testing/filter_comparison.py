@@ -22,7 +22,7 @@ gdal.UseExceptions()
 # ---- CONFIG -----------------------------------------------------------------
 POINTS_GPKG   = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sat_lidar\01_data\ICE_SAT\at08_terrain_near_levees.gpkg")
 DTM_TIF       = Path(r"B:\01_Projects\154_Poland_Flood_v3\01_MD\01_HAZARD\01_DTM\1m\Poland_dem_1m.tif")
-DSM_TIF       = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\dsm\COP_DSM_10m_2180.tif")  # GLO-30 mosaic used by script 15 - adjust if named differently
+DSM_TIF       = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\COP_DSM\COP_DSM_Poland_2180_c_10m.tif")  # GLO-30 mosaic used by script 15 - adjust if named differently
 SEGMENTS_GPKG = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sat_lidar\01_data\ICE_SAT\ATL08\processing\levee_segments_z.gpkg")
 
 CAND_DIST_M, RING_MIN_M, RING_MAX_M = 30.0, 50.0, 200.0

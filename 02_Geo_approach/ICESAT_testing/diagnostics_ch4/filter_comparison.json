@@ -1,0 +1,77 @@
+{
+  "n_export": 940710,
+  "value_counts": {
+    "cloud_flag_atm": {
+      "1.0": 503614,
+      "0.0": 437096
+    },
+    "layer_flag": {
+      "0.0": 532183,
+      "1.0": 408527
+    },
+    "terrain_flag": {
+      "1.0": 665038,
+      "0.0": 275672
+    }
+  },
+  "A_cloud_only": {
+    "filter": "A_cloud_only",
+    "n_pass": 940710,
+    "n_candidates": 11519,
+    "n_crest": 3346,
+    "dz_over_dsm": {
+      "n": 3344,
+      "median_m": -0.563,
+      "mae_m": 1.029,
+      "p20_m": -1.514,
+      "p80_m": 0.125
+    },
+    "crest_vs_dtm": {
+      "n": 3346,
+      "median_m": -3.291,
+      "mae_m": 3.327,
+      "p20_m": -4.773,
+      "p80_m": -1.713
+    }
+  },
+  "B_plus_layer0": {
+    "filter": "B_plus_layer0",
+    "n_pass": 532183,
+    "n_candidates": 5979,
+    "n_crest": 1541,
+    "dz_over_dsm": {
+      "n": 1539,
+      "median_m": -0.514,
+      "mae_m": 0.969,
+      "p20_m": -1.335,
+      "p80_m": 0.184
+    },
+    "crest_vs_dtm": {
+      "n": 1541,
+      "median_m": -3.181,
+      "mae_m": 3.16,
+      "p20_m": -4.451,
+      "p80_m": -1.665
+    }
+  },
+  "C_plus_layer0_terrain0": {
+    "filter": "C_plus_layer0_terrain0",
+    "n_pass": 157614,
+    "n_candidates": 1549,
+    "n_crest": 153,
+    "dz_over_dsm": {
+      "n": 152,
+      "median_m": -0.253,
+      "mae_m": 0.808,
+      "p20_m": -1.07,
+      "p80_m": 0.439
+    },
+    "crest_vs_dtm": {
+      "n": 153,
+      "median_m": -3.31,
+      "mae_m": 3.271,
+      "p20_m": -4.629,
+      "p80_m": -1.973
+    }
+  }
+}
