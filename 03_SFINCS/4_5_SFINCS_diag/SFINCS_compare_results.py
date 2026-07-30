@@ -227,3 +227,84 @@ def compare(hb, hl, zsb, zsl, area_m2, inp):
     # difference raster for maps (levees - baseline water level, common wet)
     dz_o, _, _ = orient(dz.copy(),
                         read_var_x[0].copy(), read_var_y[0].copy())
+    write_gtiff(OUT_DIR / "dz_levees_minus_baseline.tif", dz_o, inp,
+                source_nc=RUN_LEVEES / "sfincs_map.nc")
+    return comp
+
+
+# ---- figures ----------------------------------------------------------------
+
+def figures(dfs):
+    allrows = pd.concat(dfs, ignore_index=True)
+    allrows.to_csv(OUT_DIR / "graphs_data.csv", index=False)
+
+    # volume balance relative to inflow (log), decays toward steadiness
+    fig, ax = plt.subplots(figsize=(6.6, 4.0))
+    for name, ls, col in (("baseline", "-", INK), ("levees", "--", C_LEVEES)):
+        sub = allrows[allrows["run"] == name]
+        ax.plot(sub["hour"], np.abs(sub["dV_dt_pct_inflow"]), lw=1.0,
+                color=col, ls=ls,
+                label="bez hrází" if name == "baseline" else "s hrázemi")
+    ax.axhline(VOL_TOL_PCT, color=SUB, ls=":", lw=0.9,
+               label=f"práh {VOL_TOL_PCT:.0f} % přítoku")
+    ax.set_yscale("log")
+    ax.set_xlabel("Čas simulace [h]")
+    ax.set_ylabel("Změna objemu vody [% přítoku]")
+    ax.legend(frameon=False)
+    for sd in ("left", "bottom"):
+        ax.spines[sd].set_color(SPINE)
+    ax.tick_params(length=0)
+    fig.tight_layout(); fig.savefig(OUT_DIR / "fig_volume_balance.png")
+    plt.close(fig)
+
+    fig, ax = plt.subplots(figsize=(6.6, 4.0))
+    for name, ls, col in (("baseline", "-", INK), ("levees", "--", C_LEVEES)):
+        sub = allrows[allrows["run"] == name]
+        ax.plot(sub["hour"], sub["wet_area_km2"], lw=1.0, color=col, ls=ls,
+                label="bez hrází" if name == "baseline" else "s hrázemi")
+    ax.set_xlabel("Čas simulace [h]")
+    ax.set_ylabel("Zatopená plocha [km²]")
+    ax.legend(frameon=False)
+    for sd in ("left", "bottom"):
+        ax.spines[sd].set_color(SPINE)
+    ax.tick_params(length=0)
+    fig.tight_layout(); fig.savefig(OUT_DIR / "fig_wet_area.png")
+    plt.close(fig)
+    print("  saved fig_volume_balance.png, fig_wet_area.png, graphs_data.csv")
+
+
+# ---- main -------------------------------------------------------------------
+
+read_var_x = read_var_y = None
+
+def main():
+    global read_var_x, read_var_y
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    print("baseline:")
+    sb, dfb, hb, zsb, zbb, inp_b, area = process_run("baseline", RUN_BASELINE)
+    print("levees:")
+    sl, dfl, hl, zsl, zbl, inp_l, _ = process_run("levees", RUN_LEVEES)
+
+    if (inp_b["x0"], inp_b["y0"], inp_b["mmax"], inp_b["nmax"]) != \
+       (inp_l["x0"], inp_l["y0"], inp_l["mmax"], inp_l["nmax"]):
+        raise RuntimeError("Runs are on different grids - comparison invalid")
+
+    read_var_x = read_var(RUN_BASELINE / "sfincs_map.nc", "x")
+    read_var_y = read_var(RUN_BASELINE / "sfincs_map.nc", "y")
+    comp = compare(hb, hl, zsb, zsl, area, inp_b)
+
+    summary = {"baseline": sb, "levees": sl, "comparison": comp,
+               "thresholds": {"min_depth_m": MIN_DEPTH_M,
+                              "steady_dz_m": STEADY_DZ_M,
+                              "diff_min_m": DIFF_MIN_M}}
+    (OUT_DIR / "sfincs_summary.json").write_text(
+        json.dumps(summary, indent=2, ensure_ascii=False))
+    print("  saved sfincs_summary.json")
+
+    figures([dfb, dfl])
+    print("Done.")
+
+
+if __name__ == "__main__":
+    main()
