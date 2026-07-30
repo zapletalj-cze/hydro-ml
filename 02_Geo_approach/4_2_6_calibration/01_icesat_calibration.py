@@ -39,7 +39,10 @@ THRESHOLDS    = [0.05, 0.1, 0.2, 0.3, 0.5, 0.7]
 
 CREST_WIN_M   = 5.0
 GROUND_WIN_M  = 1.0
-OFFSET_SAMPLE = 5000
+GRID_KM        = 25.0   # offset grid cell size [km], whole Poland
+PER_CELL       = 150    # max sampled points per grid cell
+MIN_CELL_N     = 50     # cells with fewer valid diffs are not reported
+CORRIDOR_KM    = 30.0   # cells within this distance of the axis feed the correction
 OUT_DIR  = Path(__file__).parent / "diagnostics_ch4"   # figures + json + csv
 OUT_GPKG = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sat_lidar\01_data\ICE_SAT\ATL08\crest_points_2d.gpkg")  # set where the point layer should go
 
@@ -159,36 +162,95 @@ def main():
     report["n_reference"] = int(is_ref.sum())
     report["n_candidates"] = int(is_cand.sum())
 
-    # datum offset on a reference subsample
+    # datum offset on a 25 km grid over the whole export
     dtm = DtmSampler(DTM_TIF)
+    from shapely.ops import unary_union, nearest_points
+    from shapely.geometry import Point as _P
+    axis = unary_union(list(seg.geometry.values))
+
     ref_idx = np.where(is_ref)[0]
     rng = np.random.default_rng(42)
-    sub = rng.choice(ref_idx, size=min(OFFSET_SAMPLE, len(ref_idx)),
-                     replace=False)
-    diffs = []
-    for i in sub:
-        v = dtm.ground(xy[i, 0], xy[i, 1])
-        if np.isfinite(v):
-            diffs.append(v - h[i])
+    step = GRID_KM * 1000.0
+    cell_of = (np.floor(xy[ref_idx, 0] / step).astype(int) * 100000
+               + np.floor(xy[ref_idx, 1] / step).astype(int))
+    diffs, cell_ids = [], []
+    block_stats = []
+    for c in np.unique(cell_of):
+        in_c = ref_idx[cell_of == c]
+        take = rng.choice(in_c, size=min(PER_CELL, len(in_c)), replace=False)
+        d_c = []
+        for i in take:
+            v = dtm.ground(xy[i, 0], xy[i, 1])
+            if np.isfinite(v):
+                d_c.append(v - h[i])
+        diffs.extend(d_c)
+        cell_ids.extend([int(c)] * len(d_c))
+        if len(d_c) >= MIN_CELL_N:
+            cx = (c // 100000) * step + step / 2
+            cy = (c % 100000) * step + step / 2
+            block_stats.append({"cell": int(c), "x_m": float(cx),
+                                "y_m": float(cy), "n": len(d_c),
+                                "median_m": float(np.median(d_c)),
+                                "dist_axis_km":
+                                    float(_P(cx, cy).distance(axis)) / 1000.0})
     if len(diffs) < 200:
         (OUT_DIR / "crest_selection_sweep.json").write_text(
             json.dumps(report, indent=2))
         raise RuntimeError(f"offset from only {len(diffs)} points")
     diffs = np.asarray(diffs, float)
-    offset = float(np.median(diffs))
-    report["datum_offset_m"] = offset
-    report["datum_offset_n"] = int(len(diffs))
+    cell_ids = np.asarray(cell_ids)
+    corridor_cells = [b["cell"] for b in block_stats
+                      if b["dist_axis_km"] <= CORRIDOR_KM]
+    in_corr = np.isin(cell_ids, corridor_cells)
+    offset_pl = float(np.median(diffs))
+    offset = float(np.median(diffs[in_corr])) if in_corr.any() else offset_pl
+    report["datum_offset_m"] = offset               # corridor, used as correction
+    report["datum_offset_poland_m"] = offset_pl     # country-wide evidence
+    report["datum_offset_n"] = int(in_corr.sum())
+    report["datum_offset_n_poland"] = int(len(diffs))
     report["datum_offset_spread"] = {
-        "mean_m": float(diffs.mean()), "std_m": float(diffs.std()),
+        "std_m": float(diffs.std()),
         "p20_m": float(np.percentile(diffs, 20)),
         "p80_m": float(np.percentile(diffs, 80)),
-        "share_within_0_2_m": float((np.abs(diffs - offset) <= 0.2).mean()),
-        "share_within_0_5_m": float((np.abs(diffs - offset) <= 0.5).mean()),
+        "share_within_0_2_m": float((np.abs(diffs - offset_pl) <= 0.2).mean()),
+        "share_within_0_5_m": float((np.abs(diffs - offset_pl) <= 0.5).mean()),
     }
-    pd.DataFrame({"dtm_minus_atl08_m": diffs}).to_csv(
+    report["datum_offset_cells"] = block_stats
+    meds = [b["median_m"] for b in block_stats]
+    if meds:
+        report["datum_offset_cell_range_m"] = float(max(meds) - min(meds))
+
+    # (a) Kruskal-Wallis: do cells share one distribution of differences?
+    from scipy import stats as sps
+    groups = [diffs[cell_ids == b["cell"]] for b in block_stats]
+    if len(groups) >= 3:
+        kw = sps.kruskal(*groups)
+        report["offset_kruskal"] = {"H": float(kw.statistic),
+                                    "p": float(kw.pvalue)}
+    # (b) weighted OLS trend of cell medians on x, y (per 100 km)
+    if len(block_stats) >= 5:
+        bx = np.array([b["x_m"] for b in block_stats]) / 1e5
+        by = np.array([b["y_m"] for b in block_stats]) / 1e5
+        bm = np.array([b["median_m"] for b in block_stats])
+        bw = np.sqrt(np.array([b["n"] for b in block_stats], float))
+        A = np.c_[np.ones(len(bm)), bx, by] * bw[:, None]
+        yv = bm * bw
+        coef, res, rank, _ = np.linalg.lstsq(A, yv, rcond=None)
+        dof = len(bm) - 3
+        if dof > 0 and res.size:
+            cov = (float(res[0]) / dof) * np.linalg.inv(A.T @ A)
+            se = np.sqrt(np.diag(cov))
+            tv = coef / se
+            pv = 2 * (1 - sps.t.cdf(np.abs(tv), dof))
+            report["offset_trend_per_100km"] = {
+                "east_m": float(coef[1]), "east_p": float(pv[1]),
+                "north_m": float(coef[2]), "north_p": float(pv[2])}
+
+    pd.DataFrame({"dtm_minus_atl08_m": diffs, "cell": cell_ids}).to_csv(
         OUT_DIR / "datum_offset_points.csv", index=False)
-    print(f"datum offset: {offset:+.2f} m from {len(diffs)} points, "
-          f"std {diffs.std():.2f} m")
+    print(f"offset corridor {offset:+.2f} m (n {int(in_corr.sum())}), "
+          f"Poland {offset_pl:+.2f} m (n {len(diffs)}), "
+          f"cell range {report.get('datum_offset_cell_range_m', 0):.2f} m")
 
     fig, ax = plt.subplots(figsize=(6.2, 3.8))
     lim = max(1.0, float(np.percentile(np.abs(diffs - offset), 99)) + 0.3)
@@ -206,6 +268,32 @@ def main():
     fig.tight_layout()
     fig.savefig(OUT_DIR / "fig_datum_offset_hist.png")
     plt.close(fig)
+
+    if block_stats:
+        from matplotlib import colors as mcolors
+        fig, ax = plt.subplots(figsize=(6.6, 6.2))
+        bx = [b["x_m"] / 1000 for b in block_stats]
+        by = [b["y_m"] / 1000 for b in block_stats]
+        bm = [b["median_m"] for b in block_stats]
+        lim = max(0.05, max(abs(min(bm)), abs(max(bm))))
+        sc = ax.scatter(bx, by, c=bm, cmap="Greys",
+                        norm=mcolors.Normalize(vmin=-lim, vmax=lim),
+                        s=120, marker="s", edgecolors=INK, linewidths=0.5)
+        geoms = axis.geoms if hasattr(axis, "geoms") else [axis]
+        for g in geoms:
+            arr = np.asarray(g.coords)
+            ax.plot(arr[:, 0] / 1000, arr[:, 1] / 1000, color=INK, lw=0.8)
+        cb = fig.colorbar(sc, ax=ax, shrink=0.75)
+        cb.set_label("Medián rozdílu DTM a ATL08 [m]")
+        ax.set_xlabel("X (EPSG:2180) [km]")
+        ax.set_ylabel("Y (EPSG:2180) [km]")
+        ax.set_aspect("equal")
+        for sdn in ("left", "bottom"):
+            ax.spines[sdn].set_color(SPINE)
+        ax.tick_params(length=0)
+        fig.tight_layout()
+        fig.savefig(OUT_DIR / "fig_datum_offset_map.png")
+        plt.close(fig)
 
     # 2D prominence for candidates
     tree = cKDTree(xy[is_ref])
@@ -229,9 +317,6 @@ def main():
     # sweep + DTM validation per threshold; the DTM crest is sampled at the
     # nearest point ON the detected axis (union of segments), not at the ATL08
     # point, so slope-toe points are judged against the true crest
-    from shapely.ops import unary_union, nearest_points
-    from shapely.geometry import Point as _P
-    axis = unary_union(list(seg.geometry.values))
     sweep_rows = []
     dtm_cache = {}
     for thr in THRESHOLDS:
