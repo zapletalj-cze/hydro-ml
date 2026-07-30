@@ -39,10 +39,12 @@ THRESHOLDS    = [0.05, 0.1, 0.2, 0.3, 0.5, 0.7]
 
 CREST_WIN_M   = 5.0
 GROUND_WIN_M  = 1.0
-GRID_KM        = 25.0   # offset grid cell size [km], whole Poland
-PER_CELL       = 150    # max sampled points per grid cell
-MIN_CELL_N     = 50     # cells with fewer valid diffs are not reported
+GRID_KM        = 10.0   # offset grid cell size [km], whole Poland
+MIN_CELL_N     = 100    # cells with fewer valid diffs are not mapped
 CORRIDOR_KM    = 30.0   # cells within this distance of the axis feed the correction
+PROFILE_BIN_KM = 25.0   # bin size of the diff-vs-X and diff-vs-Y profiles
+N_WORKERS      = 12     # parallel DTM readers (threads, each with own handle)
+CHUNK          = 20000  # points per work unit; each unit saved to the temp dir
 OUT_DIR  = Path(__file__).parent / "diagnostics_ch4"   # figures + json + csv
 OUT_GPKG = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sat_lidar\01_data\ICE_SAT\ATL08\crest_points_2d.gpkg")  # set where the point layer should go
 
@@ -162,34 +164,71 @@ def main():
     report["n_reference"] = int(is_ref.sum())
     report["n_candidates"] = int(is_cand.sum())
 
-    # datum offset on a 25 km grid over the whole export
-    dtm = DtmSampler(DTM_TIF)
+    # datum offset from ALL reference points, parallel chunked DTM reads with
+    # resume: every finished chunk lands in the temp dir and is never redone
     from shapely.ops import unary_union, nearest_points
     from shapely.geometry import Point as _P
     axis = unary_union(list(seg.geometry.values))
 
-    ref_idx = np.where(is_ref)[0]
-    rng = np.random.default_rng(42)
+    ref_idx = np.where(np.isfinite(h))[0]
     step = GRID_KM * 1000.0
     cell_of = (np.floor(xy[ref_idx, 0] / step).astype(int) * 100000
                + np.floor(xy[ref_idx, 1] / step).astype(int))
-    diffs, cell_ids = [], []
+    order = np.argsort(cell_of, kind="stable")   # cell-sorted: cache-friendly
+
+    import threading
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    tmp_dir = OUT_DIR / "offset_tmp"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    tls = threading.local()
+
+    def worker(k, ois):
+        part = tmp_dir / f"chunk_{k:05d}.npz"
+        if part.exists():
+            return k, "cached"
+        if not hasattr(tls, "dtm"):
+            tls.dtm = DtmSampler(DTM_TIF)     # one GDAL handle per thread
+        out = np.full(len(ois), np.nan)
+        for j, oi in enumerate(ois):
+            i = ref_idx[oi]
+            out[j] = tls.dtm.ground(xy[i, 0], xy[i, 1])
+        np.savez_compressed(part, oi=np.asarray(ois), val=out)
+        return k, "done"
+
+    chunks = [order[c:c + CHUNK] for c in range(0, len(order), CHUNK)]
+    print(f"offset: {len(ref_idx)} points in {len(chunks)} chunks, "
+          f"{N_WORKERS} workers, temp: {tmp_dir}")
+    with ThreadPoolExecutor(max_workers=N_WORKERS) as ex:
+        futs = [ex.submit(worker, k, ois) for k, ois in enumerate(chunks)]
+        done = 0
+        for f in as_completed(futs):
+            f.result()
+            done += 1
+            if done % 5 == 0 or done == len(chunks):
+                print(f"  {done} / {len(chunks)} chunks")
+
+    diffs = np.full(len(ref_idx), np.nan)
+    for k in range(len(chunks)):
+        part = np.load(tmp_dir / f"chunk_{k:05d}.npz")
+        vals = part["val"]
+        ois = part["oi"]
+        ok = np.isfinite(vals)
+        diffs[ois[ok]] = vals[ok] - h[ref_idx[ois[ok]]]
+
+    dtm = DtmSampler(DTM_TIF)   # main-thread handle for the later crest sampling
+    valid = np.isfinite(diffs)
+    pxs, pys = xy[ref_idx, 0][valid], xy[ref_idx, 1][valid]
+    cell_ids = cell_of[valid]
+    diffs = diffs[valid]
+
     block_stats = []
-    for c in np.unique(cell_of):
-        in_c = ref_idx[cell_of == c]
-        take = rng.choice(in_c, size=min(PER_CELL, len(in_c)), replace=False)
-        d_c = []
-        for i in take:
-            v = dtm.ground(xy[i, 0], xy[i, 1])
-            if np.isfinite(v):
-                d_c.append(v - h[i])
-        diffs.extend(d_c)
-        cell_ids.extend([int(c)] * len(d_c))
+    for c in np.unique(cell_ids):
+        d_c = diffs[cell_ids == c]
         if len(d_c) >= MIN_CELL_N:
             cx = (c // 100000) * step + step / 2
             cy = (c % 100000) * step + step / 2
             block_stats.append({"cell": int(c), "x_m": float(cx),
-                                "y_m": float(cy), "n": len(d_c),
+                                "y_m": float(cy), "n": int(len(d_c)),
                                 "median_m": float(np.median(d_c)),
                                 "dist_axis_km":
                                     float(_P(cx, cy).distance(axis)) / 1000.0})
@@ -197,8 +236,6 @@ def main():
         (OUT_DIR / "crest_selection_sweep.json").write_text(
             json.dumps(report, indent=2))
         raise RuntimeError(f"offset from only {len(diffs)} points")
-    diffs = np.asarray(diffs, float)
-    cell_ids = np.asarray(cell_ids)
     corridor_cells = [b["cell"] for b in block_stats
                       if b["dist_axis_km"] <= CORRIDOR_KM]
     in_corr = np.isin(cell_ids, corridor_cells)
@@ -246,7 +283,8 @@ def main():
                 "east_m": float(coef[1]), "east_p": float(pv[1]),
                 "north_m": float(coef[2]), "north_p": float(pv[2])}
 
-    pd.DataFrame({"dtm_minus_atl08_m": diffs, "cell": cell_ids}).to_csv(
+    pd.DataFrame({"x": pxs, "y": pys, "cell": cell_ids,
+                  "dtm_minus_atl08_m": diffs}).to_csv(
         OUT_DIR / "datum_offset_points.csv", index=False)
     print(f"offset corridor {offset:+.2f} m (n {int(in_corr.sum())}), "
           f"Poland {offset_pl:+.2f} m (n {len(diffs)}), "
@@ -271,28 +309,68 @@ def main():
 
     if block_stats:
         from matplotlib import colors as mcolors
-        fig, ax = plt.subplots(figsize=(6.6, 6.2))
-        bx = [b["x_m"] / 1000 for b in block_stats]
-        by = [b["y_m"] / 1000 for b in block_stats]
-        bm = [b["median_m"] for b in block_stats]
-        lim = max(0.05, max(abs(min(bm)), abs(max(bm))))
-        sc = ax.scatter(bx, by, c=bm, cmap="Greys",
-                        norm=mcolors.Normalize(vmin=-lim, vmax=lim),
-                        s=120, marker="s", edgecolors=INK, linewidths=0.5)
+        # raster map of cell medians (pcolormesh, NaN = white)
+        step_km = GRID_KM
+        cxs = np.array([b["x_m"] for b in block_stats]) / 1000
+        cys = np.array([b["y_m"] for b in block_stats]) / 1000
+        cms = np.array([b["median_m"] for b in block_stats])
+        ix = np.round((cxs - cxs.min()) / step_km).astype(int)
+        iy = np.round((cys - cys.min()) / step_km).astype(int)
+        raster = np.full((iy.max() + 1, ix.max() + 1), np.nan)
+        raster[iy, ix] = cms
+        xe = cxs.min() - step_km / 2 + np.arange(ix.max() + 2) * step_km
+        ye = cys.min() - step_km / 2 + np.arange(iy.max() + 2) * step_km
+        lim = max(0.05, float(np.nanmax(np.abs(raster))))
+        fig, ax = plt.subplots(figsize=(6.8, 6.4))
+        cmap = plt.get_cmap("Greys").copy()
+        cmap.set_bad("white")
+        pm = ax.pcolormesh(xe, ye, np.ma.masked_invalid(raster), cmap=cmap,
+                           norm=mcolors.Normalize(vmin=-lim, vmax=lim),
+                           edgecolors="none")
         geoms = axis.geoms if hasattr(axis, "geoms") else [axis]
         for g in geoms:
             arr = np.asarray(g.coords)
             ax.plot(arr[:, 0] / 1000, arr[:, 1] / 1000, color=INK, lw=0.8)
-        cb = fig.colorbar(sc, ax=ax, shrink=0.75)
+        cb = fig.colorbar(pm, ax=ax, shrink=0.75)
         cb.set_label("Medián rozdílu DTM a ATL08 [m]")
         ax.set_xlabel("X (EPSG:2180) [km]")
         ax.set_ylabel("Y (EPSG:2180) [km]")
         ax.set_aspect("equal")
+        ax.grid(False)
         for sdn in ("left", "bottom"):
             ax.spines[sdn].set_color(SPINE)
         ax.tick_params(length=0)
         fig.tight_layout()
         fig.savefig(OUT_DIR / "fig_datum_offset_map.png")
+        plt.close(fig)
+
+        # profiles of the difference along X and along Y (all points)
+        fig, axes = plt.subplots(1, 2, figsize=(9.2, 3.6), sharey=True)
+        for ax2, coord, lab in ((axes[0], pxs, "X (EPSG:2180) [km]"),
+                                (axes[1], pys, "Y (EPSG:2180) [km]")):
+            ck = coord / 1000
+            bins = np.arange(ck.min(), ck.max() + PROFILE_BIN_KM,
+                             PROFILE_BIN_KM)
+            mids, med, lo, hi = [], [], [], []
+            for b0, b1 in zip(bins[:-1], bins[1:]):
+                m = (ck >= b0) & (ck < b1)
+                if m.sum() >= MIN_CELL_N:
+                    mids.append((b0 + b1) / 2)
+                    med.append(np.median(diffs[m]))
+                    lo.append(np.percentile(diffs[m], 20))
+                    hi.append(np.percentile(diffs[m], 80))
+            ax2.fill_between(mids, lo, hi, color="#DDDDDD",
+                             label="p20 az p80")
+            ax2.plot(mids, med, color=INK, lw=1.1, label="median")
+            ax2.axhline(0, color=SUB, ls=":", lw=0.9)
+            ax2.set_xlabel(lab)
+            for sdn in ("left", "bottom"):
+                ax2.spines[sdn].set_color(SPINE)
+            ax2.tick_params(length=0)
+        axes[0].set_ylabel("Rozdil DTM a ATL08 [m]")
+        axes[0].legend(frameon=False, fontsize=9)
+        fig.tight_layout()
+        fig.savefig(OUT_DIR / "fig_datum_offset_profiles.png")
         plt.close(fig)
 
     # 2D prominence for candidates
