@@ -19,7 +19,7 @@ from osgeo import gdal, osr
 gdal.UseExceptions()
 
 # ---- CONFIG -----------------------------------------------------------------
-MODEL_ROOT = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\SFINCS_model\model_RP100")
+MODEL_ROOT = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\SFINCS_model\model_RP10_100h")
 RUN_BASELINE = MODEL_ROOT / "sfincs_baseline"    # <- adjust to your folder names
 RUN_LEVEES   = MODEL_ROOT / "sfincs_levees"      # <- run A (ATL08), then run B (+1.8 m)
 
@@ -31,7 +31,7 @@ VOL_TOL_PCT   = 1.0      # steady if |dV/dt| < this % of total inflow
 Q_IN_M3S      = None     # total inflow; None -> parsed from sfincs.dis
 NODATA        = -9999.0
 
-OUT_DIR = Path(__file__).parent / "diagnostics_ch4"
+OUT_DIR = Path(__file__).parent / "diagnostics_ch4/dz_1800_RP10"
 SKIP_EXISTING_TIFS = True   # keep tifs already styled in QGIS; stats always fresh
 
 INK, SUB, GRID, SPINE = "#1A1A1A", "#555555", "#E5E7EB", "#BBBBBB"
@@ -224,11 +224,7 @@ def compare(hb, hl, zsb, zsl, area_m2, inp):
         "dz_min_m": float(np.nanmin(dz)) if both.any() else None,
         "dz_max_m": float(np.nanmax(dz)) if both.any() else None,
     }
-    # difference raster for maps (levees - baseline water level, common wet)
-    dz_o, _, _ = orient(dz.copy(),
-                        read_var_x[0].copy(), read_var_y[0].copy())
-    write_gtiff(OUT_DIR / "dz_levees_minus_baseline.tif", dz_o, inp,
-                source_nc=RUN_LEVEES / "sfincs_map.nc")
+
     return comp
 
 

@@ -1,0 +1,44 @@
+{
+  "baseline": {
+    "wet_area_km2": 252.9589,
+    "max_depth_m": 463.15008544921875,
+    "mean_depth_m": 2.7464880428941196,
+    "volume_mil_m3": 694.7485941936493,
+    "sim_hours": 100,
+    "last_hour_dz_max_m": 1.5421829223632812,
+    "last_hour_dz_median_m": 0.00116729736328125,
+    "q_in_m3s": 7840.0,
+    "last_hour_dV_dt_m3s": 436.7994043562362,
+    "last_hour_dV_dt_pct_inflow": 5.571420973931584,
+    "steady": false,
+    "steady_cellmax": false
+  },
+  "levees": {
+    "wet_area_km2": 220.6875,
+    "max_depth_m": 463.15008544921875,
+    "mean_depth_m": 2.8614263858541285,
+    "volume_mil_m3": 631.4810355281829,
+    "sim_hours": 100,
+    "last_hour_dz_max_m": 1.2282867431640625,
+    "last_hour_dz_median_m": 0.00058746337890625,
+    "q_in_m3s": 7840.0,
+    "last_hour_dV_dt_m3s": 599.9442270066879,
+    "last_hour_dV_dt_pct_inflow": 7.652349834268978,
+    "steady": false,
+    "steady_cellmax": false
+  },
+  "comparison": {
+    "protected_area_km2": 39.8168,
+    "newly_wet_area_km2": 7.5454,
+    "wet_area_diff_km2": -32.2714,
+    "changed_area_km2": 94.252,
+    "dz_median_changed_m": 0.059600830078125,
+    "dz_min_m": -4.4952392578125,
+    "dz_max_m": 1.71484375
+  },
+  "thresholds": {
+    "min_depth_m": 0.05,
+    "steady_dz_m": 0.05,
+    "diff_min_m": 0.05
+  }
+}
