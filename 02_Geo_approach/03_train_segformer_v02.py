@@ -1,34 +1,8 @@
 """
-Levee Detection - Training Script (converted from notebook for performance)
-============================================================================
+SegFormer training for levee detection (PL + USA patches, comid-grouped split).
 
-Converted to a standalone Python script so DataLoader workers can use
-multiprocessing without Windows/Jupyter deadlocks. With num_workers > 0 the
-GPU utilisation goes from ~10-30% to ~80%+ on this workload.
-
-Trains on a single drainage basin (the TRAIN basin produced by the patch
-generator) and splits it into train/val by reach id for checkpoint selection.
-There is no test split here on purpose - the held-out basin is evaluated
-separately by evaluate_segformer.py, so train/val leakage inside this basin
-only affects checkpoint choice, not the reported generalization metric.
-
-Configuration knobs are constants at the top of the file (no CLI).
-To run a different ablation variant, edit the CONFIG block:
-    - ARCHITECTURE
-    - INPUT_CHANNELS  (defines variant)
-    - OUTPUT_DIR       (must be unique per variant - otherwise overwrites)
-
-Pipeline (called from main()):
-    1. load + split metadata (train/val only)
-    2. compute or load per-channel normalization stats
-    3. build dataset + dataloaders
-    4. build model (architecture-aware)
-    5. train()           - epoch loop with best-checkpoint logging
-    6. evaluate_split()  - val only, as a quick sanity check
-
-Author:   Jakub Zapletal
-Date:     2026-06-18
-Version:  0.2
+Author: Jakub Zapletal
+Date:   2026-04-14
 """
 
 import warnings
@@ -56,15 +30,13 @@ import matplotlib
 matplotlib.use("Agg")  # no display required when running headless
 import matplotlib.pyplot as plt
 import segmentation_models_pytorch as smp
-import time
 
 # ============================================================
-# CONFIG  -  edit these for each ablation run
+# CONFIG
 # ============================================================
 
 # ------- Paths ----------------------------------------------
-# Two training sources combined; the held-out basin is evaluated separately
-# by evaluate_segformer.py.
+# Two training sources; the held-out basin is evaluated separately
 PATCHES_DIR_USA = Path(
     r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\patches_v02_USA\patches"
 )
@@ -78,7 +50,7 @@ METADATA_CSV_PL = Path(
     r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\patches\patches_PL_train\patches_metadata.csv"
 )
 
-# Output dir - MUST be unique per variant
+# Output dir, unique per variant
 OUTPUT_DIR = Path(
     r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\training_v06_segformer_PL_US"
 )
@@ -90,13 +62,11 @@ SEED = 42
 
 
 # ------- Hardware -------------------------------------------
-# num_workers > 0 now works because we run as a script with __main__ guard.
 NUM_WORKERS = 12
 
 
 # ------- Channels --------------------------------------------
-# Full channel set incl. the binary water mask (7th channel). Water is kept as
-# 0/1 and is NOT z-scored (see LeveeDataset._normalize and the norm-stats step).
+# Full channel set incl. the binary water mask; water stays 0/1, not z-scored
 INPUT_CHANNELS = [
     "dsm",
     "tpi_r5",
@@ -111,8 +81,8 @@ WATER_CHANNEL = "water"
 
 
 # ------- Train/val split -------------------------------------
-# Split by reach id (comid) so segments of the same embankment stay together.
-# No test split: the held-out basin is the test set (evaluate_segformer.py).
+# Split by reach id (comid) so segments of the same embankment stay together;
+# the held-out basin serves as the test set
 SPLIT_BY = "comid"
 TRAIN_FRAC = 0.75
 VAL_FRAC = 0.25
@@ -158,7 +128,7 @@ USE_ROT_90 = True
 SAVE_PREDICTIONS = True  # save per-patch val predictions for stacking
 
 
-# Derived (do not edit)
+# Derived
 N_INPUT_CHANNELS = len(INPUT_CHANNELS)
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
