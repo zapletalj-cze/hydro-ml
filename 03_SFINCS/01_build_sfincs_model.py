@@ -16,7 +16,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import geopandas as gpd
 from hydromt_sfincs import SfincsModel
 
 sys.path.append(str(Path(__file__).resolve().parents[1] / "02_Geo_approach"))
