@@ -1,72 +1,26 @@
 """
-Paired SFINCS models: baseline vs detected levees (fluvial, steady flow, RP100)
-===============================================================================
+Paired SFINCS models (baseline vs detected levees), steady RP100 discharge.
+The two models share grid, elevation, roughness, mask and forcing; model B
+adds the detected levees as weirs, so any flood difference is due to levees.
 
-Builds TWO HydroMT-SFINCS models that are identical in every respect (grid,
-elevation, roughness, mask, boundaries, discharge) and differ in exactly one
-thing: model B contains the detected levees as weir structures. Any difference
-in the simulated flood is therefore attributable to the levees alone.
-
-    <OUT_ROOT>/sfincs_baseline      no levees
-    <OUT_ROOT>/sfincs_levees        detected levees as weirs (crest z, overtopping)
-
-Design:
-    - grid:        EPSG:2180, regular, 10 m resolution (cell = DSM pixel)
-    - elevation:   Copernicus GLO-30 resampled DSM, 10 m, EGM2008 orthometric
-    - roughness:   ESA WorldCover 10 m via reclass table (written next to script)
-    - forcing:     point discharges, constant Q = RP100 (steady state reached by
-                   running a constant hydrograph for SIM_HOURS)
-    - boundary:    downstream outflow cells in the mask (mask=3)
-    - structures:  detected levee lines as weirs; crest from column Z_COLUMN,
-                   fallback: crest = DSM + DZ_DEFAULT where z is missing
-
-Discharge input format (prepared by the user):
-    GPKG in EPSG:2180, point layer with columns:
-        index    unique integer id
-        q_rp100  discharge [m3/s]
-        name     optional
-    Points must lie on the river centreline a few cells inside the active mask.
-
-Environment (current stack, verified against hydromt_sfincs v2.0.0 docs):
-    pip install "hydromt_sfincs>=2.0.0"      # pulls hydromt v1 (component API)
-    SFINCS kernel: run locally via the Windows executable (no Docker).
-        Download the SFINCS release (sfincs.exe + its DLLs) from Deltares and
-        set EXE_PATH below. The kernel reads sfincs.inp from its working
-        directory, so each model is run with cwd = its own folder. Windows
-        resolves the DLLs from the executable's own directory, so the exe can
-        stay in its release folder.
-
-v2.0.0 API notes (component architecture replaces the old setup_* methods):
-    setup_grid_from_region   -> sf.grid.create_from_region(region=...)
-    setup_dep                -> sf.elevation.create(elevation_list=[{"elevation": ...}])
-    setup_mask_active        -> sf.mask.create_active(include_polygon=...)
-    setup_mask_bounds        -> sf.mask.create_boundary(btype="outflow", ...)
-    setup_manning_roughness  -> sf.roughness.create(roughness_list=[{"lulc": ..., "reclass_table": ...}])
-    setup_discharge_forcing  -> sf.discharge_points.create(locations=..., timeseries=...)
-    setup_structures(weir)   -> sf.weirs.create(locations=..., dep=..., dz=...)
-    setup_config             -> sf.config.update({...})   # Pydantic-validated dict
-
-Two ordering facts baked into this script (from the v2 source):
-    1) discharge_points.create() clips the timeseries to the model time window,
-       so config tstart/tstop MUST be set before the discharge call.
-    2) the roughness reclass CSV is read with index_col=0 and the Manning values
-       must sit in a column literally named "N" (lulc class is the index).
-
-Note: hydromt uses rasterio internally; this script itself does not import
-rasterio or fiona.
-
-Author:  prepared for Jakub Zapletal
+Author: Jakub Zapletal
+Date:   2026-04-27
 """
 
 import warnings
+
 warnings.filterwarnings("ignore")
 
+import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import geopandas as gpd
 from hydromt_sfincs import SfincsModel
+
+sys.path.append(str(Path(__file__).resolve().parents[1] / "02_Geo_approach"))
+from gis import Vector
 
 # ============================================================
 # CONFIG
@@ -76,13 +30,10 @@ from hydromt_sfincs import SfincsModel
 AOI_GPKG        = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\SFINCS_model\domain\domain.gpkg")            # model domain polygon, EPSG:2180
 DSM_TIF         = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\SFINCS_model\dtm\COP_DSM_10m_Wistula.tif")      # elevation, EGM2008, 10 m
 WORLDCOVER_TIF  = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\SFINCS_model\landuse\ESA_WorldCover_2021_2180_c.tif")   # ESA WorldCover classes
-DISCHARGE_GPKG  = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\SFINCS_model\bc_upstream\bc_upstream.gpkg")  # see format above
-LEVEES_GPKG     = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\SFINCS_model\levees\levee_segments_z.gpkg")  # levee segments with z (script 15)
+DISCHARGE_GPKG  = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\SFINCS_model\bc_upstream\bc_upstream.gpkg")  # points: index, q_rp100[, name]
+LEVEES_GPKG     = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\SFINCS_model\levees\levee_segments_z.gpkg")  # levee segments with crest z
 
-# Optional: polygon marking the downstream edge where water may leave the
-# domain (outflow). If None, the WHOLE edge of the active domain becomes
-# outflow (confirmed behaviour of mask.create_boundary without include_polygon),
-# which is acceptable for a valley reach but less controlled.
+# Downstream outflow polygon; None makes the whole active-domain edge outflow
 OUTFLOW_GPKG    = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\SFINCS_model\bc_downstream\2d_bcdownstream.gpkg")
 
 # --- Output -------------------------------------------------
@@ -93,36 +44,28 @@ CRS_EPSG = 2180
 RES_M    = 10.0
 
 # --- Levee crest --------------------------------------------
-Z_COLUMN   = "z"     # crest elevation column on the levee lines (EGM2008 metres)
-DZ_DEFAULT = 1.8     # fallback: crest = DSM + DZ_DEFAULT where z is missing.
-                     # 1.8 m = median dz over DSM measured from the ATL08 crest
-                     # points after removing structures and vegetation, NOT an
-                     # arbitrary value. Normally unused: script 15 assigns z to
-                     # every segment, so the fallback path stays empty.
-WEIR_CD    = 0.38     # weir discharge coefficient (par1), SFINCS default
+Z_COLUMN   = "z"     # crest elevation column on the levee lines (EGM2008 m)
+DZ_DEFAULT = 1.8     # fallback crest = DSM + DZ_DEFAULT where z is missing;
+                     # 1.8 m = median dz over DSM from the ATL08 crest points
+WEIR_CD    = 0.38    # weir discharge coefficient (par1), SFINCS default
 
 # --- Rebuild control ----------------------------------------
-# True: a model whose sfincs.inp + sfincs.dep already exist is left untouched,
-# so a failed second model can be retried without rebuilding the first.
-SKIP_EXISTING = True
+SKIP_EXISTING = True  # leave an already built model untouched
 
 # --- Steady-flow run ----------------------------------------
 SIM_HOURS   = 70                  # constant-Q run length; check steadiness
 TSTART      = "20260101 000000"   # sfincs.inp datetime format
 OUTPUT_DT_S = 3600                # map output interval [s]
 
-# --- Local SFINCS executable (no Docker) --------------------
-# Full path to the SFINCS Windows kernel. A run.bat is written into each model
-# folder regardless; set RUN_AFTER_BUILD=True to also launch both runs here.
+# --- Local SFINCS executable --------------------------------
 EXE_PATH        = Path(r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\SFINCS\SFINCS_2026_01_release\SFINCS_v2.4.0_Galibier_release_exe\sfincs.exe")
 RUN_AFTER_BUILD = False
 
-# Manning reclass table is written next to this script on first run.
-# IMPORTANT: hydromt reads it with index_col=0 and requires a column named "N".
+# Manning reclass table, written next to this script on first run; hydromt
+# reads it with index_col=0 and expects the values in a column named "N"
 RECLASS_CSV = Path(__file__).parent / "worldcover_manning.csv"
 
-# ESA WorldCover class -> Manning n (standard literature values; keep IDENTICAL
-# between both models so roughness never enters the comparison)
+# ESA WorldCover class -> Manning n (identical for both models)
 WORLDCOVER_MANNING = {
     10: 0.120,   # tree cover
     20: 0.050,   # shrubland
@@ -143,8 +86,7 @@ WORLDCOVER_MANNING = {
 # ============================================================
 
 def write_reclass_table(path):
-    """WorldCover -> Manning reclass table in the exact layout hydromt expects:
-    lulc class as the first (index) column, values in a column named 'N'."""
+    """WorldCover -> Manning reclass table (lulc class first, values in 'N')."""
     df = pd.DataFrame(
         {"lulc": list(WORLDCOVER_MANNING.keys()),
          "N": [WORLDCOVER_MANNING[k] for k in WORLDCOVER_MANNING]}
@@ -155,12 +97,8 @@ def write_reclass_table(path):
 
 
 def load_discharge_points(path):
-    """Load and validate the user-prepared RP100 discharge points."""
-    gdf = gpd.read_file(path, engine="pyogrio")
-    if gdf.crs is None:
-        gdf.set_crs(epsg=CRS_EPSG, inplace=True)
-    elif gdf.crs.to_epsg() != CRS_EPSG:
-        gdf = gdf.to_crs(epsg=CRS_EPSG)
+    """Load and validate the RP100 discharge points."""
+    gdf = Vector.load_vector(path, target_epsg=CRS_EPSG)
     for col in ("index", "q_rp100"):
         if col not in gdf.columns:
             raise ValueError(f"Discharge GPKG must contain column '{col}'")
@@ -173,8 +111,7 @@ def load_discharge_points(path):
 
 
 def constant_timeseries(gdf, tstart, hours):
-    """Constant RP100 hydrograph per point over the simulation window.
-    Columns are the integer point ids (v2 coerces timeseries columns to int)."""
+    """Constant RP100 hydrograph per point; columns are the integer point ids."""
     t0 = pd.to_datetime(tstart, format="%Y%m%d %H%M%S")
     times = pd.date_range(t0, t0 + pd.Timedelta(hours=hours), freq="1h")
     data = {int(idx): np.full(len(times), float(q))
@@ -185,27 +122,15 @@ def constant_timeseries(gdf, tstart, hours):
 
 
 def prepare_levees(path):
-    """Load detected levees, clip to the model domain, split by crest-z availability."""
-    gdf = gpd.read_file(path, engine="pyogrio")
-    if gdf.crs is None:
-        gdf.set_crs(epsg=CRS_EPSG, inplace=True)
-    elif gdf.crs.to_epsg() != CRS_EPSG:
-        gdf = gdf.to_crs(epsg=CRS_EPSG)
+    """Load detected levees, clip to the model domain, split by crest-z presence."""
+    gdf = Vector.load_vector(path, target_epsg=CRS_EPSG)
 
-    # Clip to the model domain FIRST. Segments outside it pass the len() guard
-    # but vanish inside hydromt's own masking, which then raises
-    # "GeoDataFrame has no data after masking". Clipping also avoids handing
-    # the builder thousands of segments the model will never see.
+    # Clip to the domain first; segments outside it make hydromt fail with
+    # "GeoDataFrame has no data after masking"
     n_before = len(gdf)
-    domain = gpd.read_file(AOI_GPKG, engine="pyogrio")
-    if domain.crs is None:
-        domain.set_crs(epsg=CRS_EPSG, inplace=True)
-    elif domain.crs.to_epsg() != CRS_EPSG:
-        domain = domain.to_crs(epsg=CRS_EPSG)
-    gdf = gpd.clip(gdf, domain)
-    gdf = gdf[gdf.geometry.geom_type.isin(["LineString", "MultiLineString"])]
-    gdf = gdf.explode(index_parts=False).reset_index(drop=True)
-    gdf = gdf[gdf.geometry.length > 0].reset_index(drop=True)
+    domain = Vector.load_vector(AOI_GPKG, target_epsg=CRS_EPSG)
+    gdf = Vector.clip_vector(gdf, domain)
+    gdf = Vector.explode_to_lines(gdf)
     print(f"  levees clipped to domain: {len(gdf)} of {n_before} segments "
           f"({gdf.geometry.length.sum() / 1000:.1f} km)")
     if len(gdf) == 0:
@@ -230,12 +155,11 @@ def prepare_levees(path):
 
 
 # ============================================================
-# LOCAL RUN (no Docker)
+# LOCAL RUN
 # ============================================================
 
 def write_run_bat(root, exe_path):
-    """Write a run.bat that runs the kernel from inside the model folder.
-    %~dp0 makes it work regardless of where it is launched from."""
+    """Write a run.bat that runs the kernel from inside the model folder."""
     bat = root / "run.bat"
     bat.write_text(
         "@echo off\r\n"
@@ -248,8 +172,7 @@ def write_run_bat(root, exe_path):
 
 
 def run_model(root, exe_path):
-    """Run one model synchronously with cwd = the model folder (so the kernel
-    finds sfincs.inp and writes outputs there)."""
+    """Run one model synchronously with cwd = the model folder."""
     import subprocess
     if not Path(exe_path).exists():
         raise FileNotFoundError(f"SFINCS executable not found: {exe_path}")
@@ -270,9 +193,8 @@ def model_is_built(root):
 
 
 def write_weirfile_manual(root, levees_z, filename="sfincs.weir"):
-    """Last-resort writer: SFINCS structure (tekal) format, one block per
-    segment, columns x y z_crest par1(Cd). Used only when hydromt wrote no
-    weir file at all."""
+    """Write the SFINCS structure (tekal) weir file: one block per segment,
+    columns x y z_crest par1(Cd)."""
     path = root / filename
     n_struct = 0
     with open(path, "w") as f:
@@ -292,10 +214,9 @@ def write_weirfile_manual(root, levees_z, filename="sfincs.weir"):
 
 
 def verify_weirs_in_inp(root, levees_z):
-    """Authoritative weirfile: ALWAYS rewrite sfincs.weir manually from the
-    segment z values and force the inp reference. hydromt v2 weirs.create was
-    observed to write z=0 for every vertex (ignoring the z column), which the
-    kernel prunes as below-bed -> '0 structure u/v points found'."""
+    """Rewrite sfincs.weir from the segment z values and force the inp
+    reference; hydromt weirs.create writes z=0 for every vertex, which the
+    kernel prunes as below-bed ('0 structure u/v points found')."""
     import re
     inp_path = root / "sfincs.inp"
     inp = inp_path.read_text()
@@ -304,7 +225,7 @@ def verify_weirs_in_inp(root, levees_z):
 
     zs = levees_z["z"].astype(float)
     print(f"  weir crest z: min {zs.min():.2f} m, median {zs.median():.2f} m, "
-          f"max {zs.max():.2f} m (must be terrain-level, NOT 0)")
+          f"max {zs.max():.2f} m")
 
     if re.search(r"^\s*weirfile\s*=", inp, flags=re.M):
         inp = re.sub(r"^\s*weirfile\s*=\s*\S+", f"weirfile           = {weir_name}",
@@ -312,12 +233,12 @@ def verify_weirs_in_inp(root, levees_z):
     else:
         inp = inp.rstrip() + f"\nweirfile           = {weir_name}\n"
     inp_path.write_text(inp)
-    print(f"  weirfile forced to manual '{weir_name}' in sfincs.inp")
+    print(f"  weirfile set to '{weir_name}' in sfincs.inp")
 
 
 def build_model(root, with_levees, dis_gdf, dis_ts, levees_z, levees_noz, reclass_csv):
-    """Build one SFINCS model with the v2 component API. Both variants share
-    every call except the weirs block, so the levees are the only difference."""
+    """Build one SFINCS model; both variants share every call except the
+    weirs block, so the levees are the only difference."""
     label = "WITH levees" if with_levees else "baseline"
 
     if SKIP_EXISTING and model_is_built(root):
@@ -330,7 +251,7 @@ def build_model(root, with_levees, dis_gdf, dis_ts, levees_z, levees_noz, reclas
 
     sf = SfincsModel(root=str(root), mode="w", write_gis=True)
 
-    # --- 1. grid over the AOI (regular, no rotation, 10 m, EPSG:2180) ---
+    # 1. grid over the AOI (regular, no rotation, 10 m)
     sf.grid.create_from_region(
         region={"geom": str(AOI_GPKG)},
         res=RES_M,
@@ -339,7 +260,7 @@ def build_model(root, with_levees, dis_gdf, dis_ts, levees_z, levees_noz, reclas
         align=True,
     )
 
-    # --- 2. run control FIRST: discharge create() clips series to model time ---
+    # 2. run control first: discharge create() clips series to the model time
     t0 = pd.to_datetime(TSTART, format="%Y%m%d %H%M%S")
     t1 = t0 + pd.Timedelta(hours=SIM_HOURS)
     fmt = "%Y%m%d %H%M%S"
@@ -352,21 +273,20 @@ def build_model(root, with_levees, dis_gdf, dis_ts, levees_z, levees_noz, reclas
         "alpha":    0.5,
     })
 
-    # --- 3. elevation (key renamed to "elevation" in v2) ---
+    # 3. elevation
     sf.elevation.create(elevation_list=[{"elevation": str(DSM_TIF)}])
 
-    # --- 4. active mask + outflow boundary ---
+    # 4. active mask + outflow boundary
     sf.mask.create_active(include_polygon=str(AOI_GPKG), all_touched=True)
     if OUTFLOW_GPKG is not None:
         sf.mask.create_boundary(btype="outflow",
                                 include_polygon=str(OUTFLOW_GPKG),
                                 all_touched=True)
     else:
-        # no include_polygon -> every edge cell of the active domain (verified
-        # in the v2 mask source); acceptable for a valley reach
+        # no include_polygon -> every edge cell of the active domain
         sf.mask.create_boundary(btype="outflow")
 
-    # --- 5. roughness from ESA WorldCover (fallback n where lulc has nodata) ---
+    # 5. roughness from ESA WorldCover (fallback n where lulc has nodata)
     sf.roughness.create(
         roughness_list=[{"lulc": str(WORLDCOVER_TIF),
                          "reclass_table": str(reclass_csv)}],
@@ -374,29 +294,27 @@ def build_model(root, with_levees, dis_gdf, dis_ts, levees_z, levees_noz, reclas
         manning_sea=0.04,   # irrelevant for a fluvial reach; keep equal to land
     )
 
-    # --- 6. constant RP100 discharge (steady flow) ---
+    # 6. constant RP100 discharge (steady flow)
     sf.discharge_points.create(locations=dis_gdf, timeseries=dis_ts)
 
-    # --- 7. the ONLY difference between the two models ---
+    # 7. the only difference between the two models
     if with_levees:
         if len(levees_z) > 0:
-            # crest taken from the 'z' column (EGM2008, from ATL08 workflow)
             print(f"  weirs from crest z: {len(levees_z)} segments")
             sf.weirs.create(locations=levees_z, par1=WEIR_CD)
         if len(levees_noz) > 0:
-            # crest sampled from the DSM along the line, raised by DZ_DEFAULT
             print(f"  weirs from DSM+{DZ_DEFAULT} m: {len(levees_noz)} segments")
             sf.weirs.create(locations=levees_noz, dep=str(DSM_TIF),
                             dz=DZ_DEFAULT, par1=WEIR_CD)
         if len(levees_z) == 0 and len(levees_noz) == 0:
             raise ValueError("No levee segments to schematize as weirs")
 
-    # --- 8. write everything (sfincs.inp written last, incl. component files) ---
+    # 8. write everything (sfincs.inp last, incl. component files)
     sf.write()
     if with_levees:
         if len(levees_noz) > 0:
-            print(f"  WARNING: {len(levees_noz)} segments without z are NOT in "
-                  f"the manual weirfile (script 15 should assign z to all)")
+            print(f"  WARNING: {len(levees_noz)} segments without z are not in "
+                  f"the manual weirfile")
         verify_weirs_in_inp(root, levees_z)
     write_run_bat(root, EXE_PATH)
     print(f"  written: {root}")
@@ -428,11 +346,9 @@ def main():
                 continue
             run_model(r, EXE_PATH)
     else:
-        print("\nBoth models built. Run them locally without Docker by either")
-        print("double-clicking run.bat in each folder, or from a shell:")
+        print("\nBoth models built. Run them via run.bat in each folder, or:")
         for r in roots:
             print(f'  pushd "{r}" && "{EXE_PATH}" & popd')
-        print(f'PowerShell helper: {Path(__file__).with_name("run_sfincs_models.ps1")}')
         print("Or set RUN_AFTER_BUILD = True to launch both from this script.")
 
     print("\nSteadiness check: compare zsmax at ~0.75*T and T; if they differ,")

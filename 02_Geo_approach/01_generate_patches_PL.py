@@ -1,32 +1,8 @@
 """
-Levee Detection - Patch Generation Pipeline (v0.2)
-==================================================
+Training patch generation for levee detection (Poland, large rivers only).
 
-Generates training patches for levee detection from Copernicus DSM, restricted
-to large rivers (upstream area >= MIN_UPAREA_KM2) and to a geographic subset of
-drainage basins, so the model is NOT trained on the whole country and the held
-out basins give an honest within-country generalization test.
-
-Changes vs v0.1:
-  - GDAL + GeoPandas(pyogrio) everywhere (no rasterio / fiona).
-  - Raster channels read through the SHARED patch_io.read_window, and TPI through
-    patch_io.compute_tpi, so patches match the inference pipeline bit-for-bit.
-  - Hard upstream-area filter (MIN_UPAREA_KM2) instead of S/M/L sampling.
-  - Drainage basins traced from NextDownID; a per-basin report is printed and the
-    training subset is chosen via TRAIN_BASINS (geographic hold-out).
-  - Corridor-wide negatives: sampled anywhere in the large-river corridor
-    (reaches buffered by RIVER_BUFFER_M), excluded only near ANY levee. Negatives
-    that fall on water are KEPT on purpose (hard "water, not levee" examples).
-  - 7th channel: binary water mask (from prepare_water_mask.py), read NEAREST.
-  - Metadata gains a basin_id column.
-
-Two-step use:
-  1. REPORT_BASINS_ONLY = True  -> prints the basin table and exits (pick basins).
-  2. Set TRAIN_BASINS = [...] and REPORT_BASINS_ONLY = False -> generates patches.
-
-Author:   Jakub Zapletal
-Date:     2026-06-18
-Version:  0.2
+Author: Jakub Zapletal
+Date:   2026-04-06
 """
 
 import warnings
@@ -43,11 +19,7 @@ from shapely.ops import substring, unary_union
 from shapely.prepared import prep
 from tqdm import tqdm
 
-from osgeo import gdal, ogr, osr, gdalconst
-
-gdal.UseExceptions()
-
-import patch_io  # shared read_window + compute_tpi + patch_geotransform
+from gis import Vector, Raster
 
 # ============================================================
 # CONFIG
@@ -59,7 +31,7 @@ MERIT_GPKG = r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomor
 COPDEM_TIFF = r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\sentinel\01_data\COP_DSM\COP_DSM_Poland_2180_c.tif"
 CANOPY_HEIGHT_TIFF = r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\data\CanopyHeight\Poland\reprojected\ETH_GlobalCanopyHeight_10m_2020_Poland_Map_2180.tif"
 CANOPY_HEIGHT_SD_TIFF = r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\data\CanopyHeight\Poland\reprojected\ETH_GlobalCanopyHeight_10m_2020_Poland_Map_SD_2180.tif"
-# Binary water mask produced by prepare_water_mask.py (same grid as the DSM).
+# Binary water mask on the same grid as the DSM
 WATER_TIFF = r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\source\pl\water_mask_pl.tif"
 
 OUTPUT_DIR = Path(
@@ -71,12 +43,7 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # ------- Spatial reference ----------------------------------
 TARGET_CRS = "EPSG:2180"  # PUWG 1992
 TARGET_EPSG = 2180
-POLAND_BBOX_WGS84 = (
-    14.0,
-    49.0,
-    24.2,
-    55.0,
-)  # MERIT is read in its native CRS (WGS84) then reprojected
+POLAND_BBOX_WGS84 = (14.0, 49.0, 24.2, 55.0)  # MERIT file is in WGS84
 
 
 # ------- MERIT reach attribute columns ----------------------
@@ -89,16 +56,14 @@ UPAREA_COL = "uparea"
 MIN_UPAREA_KM2 = 2000  # keep only segments on rivers at least this large
 SEGMENT_LENGTH_M = 500
 MIN_LEVEE_LENGTH_M = 100
-MAX_DIST_TO_REACH_M = (
-    500  # tightened from 1000 to reduce uparea mis-inheritance at the threshold
-)
+MAX_DIST_TO_REACH_M = 500
 
 
 # ------- Geographic hold-out (by drainage basin) ------------
-# First run with REPORT_BASINS_ONLY = True to print the basin table, then set
-# TRAIN_BASINS to the outlet COMIDs you want for TRAINING (rest of PL = test).
+# Run with REPORT_BASINS_ONLY = True first to print the basin table, then set
+# TRAIN_BASINS to the outlet COMIDs kept for training (rest of PL = test).
 REPORT_BASINS_ONLY = True
-TRAIN_BASINS = None  # e.g. [12345, 67890]; None = keep all basins
+TRAIN_BASINS = None  # list of outlet COMIDs; None keeps all basins
 
 
 # ------- Patch geometry -------------------------------------
@@ -111,11 +76,11 @@ PATCH_SIZE_M = PATCH_SIZE_PX * PATCH_RES_M  # 2560 m
 LEVEE_BUFFER_M = 15
 
 
-# ------- Corridor-wide negative sampling --------------------
-RIVER_BUFFER_M = 500  # corridor half-width around large reaches (matches inference)
-NEG_EXCLUSION_BUFFER_M = 100  # negatives must be at least this far from ANY levee
+# ------- Negative sampling ----------------------------------
+RIVER_BUFFER_M = 500  # corridor half-width around large reaches
+NEG_EXCLUSION_BUFFER_M = 100  # min distance of a negative from any levee
 NEG_POS_RATIO = 3  # negatives per positive
-NEG_TRIES_FACTOR = 40  # rejection-sampling attempt budget = ratio * n_pos * this
+NEG_TRIES_FACTOR = 40  # rejection-sampling budget = ratio * n_pos * this
 
 
 # ------- DSM derivatives ------------------------------------
@@ -139,30 +104,22 @@ CHANNEL_KEYS = [
 
 
 # ============================================================
-# SECTION 2: Load BDOT levees and MERIT reaches
+# VECTOR INPUTS
 # ============================================================
 
 
-def load_bdot_levees(path, target_crs):
-    gdf = gpd.read_file(path)
-    if str(gdf.crs) != target_crs:
-        gdf = gdf.to_crs(target_crs)
-    gdf = gdf[gdf.geometry.notna() & ~gdf.geometry.is_empty].copy()
-    return gdf
+def load_bdot_levees(path, target_epsg):
+    gdf = Vector.load_vector(path, target_epsg=target_epsg)
+    return Vector.drop_empty_geometries(gdf)
 
 
-def load_merit_reaches(path, bbox_wgs84, target_crs):
-    """Read MERIT reaches clipped to the Poland bbox (file is in WGS84), reproject."""
-    gdf = gpd.read_file(
-        path, bbox=bbox_wgs84
-    )  # pyogrio interprets bbox in the file CRS
-    if str(gdf.crs) != target_crs:
-        gdf = gdf.to_crs(target_crs)
-    return gdf
+def load_merit_reaches(path, bbox_wgs84, target_epsg):
+    """Read MERIT reaches clipped to the Poland bbox (file CRS), reproject."""
+    return Vector.load_vector(path, bbox=bbox_wgs84, target_epsg=target_epsg)
 
 
 # ============================================================
-# SECTION 3: Cut levees into fixed-length segments
+# LEVEE SEGMENTATION
 # ============================================================
 
 
@@ -200,16 +157,9 @@ def segment_levees(gdf_levees, segment_length, min_length):
     return gdf
 
 
-# ============================================================
-# SECTION 4: Assign upstream area (and NextDownID) to segments
-# ============================================================
-
-
 def assign_reach_to_segments(gdf_segments, gdf_reaches, max_dist):
-    """
-    Attach the nearest large-enough MERIT reach attributes to each segment.
-    Keeps the highest-uparea reach within max_dist (handles parallel reaches).
-    """
+    """Attach the nearest MERIT reach attributes to each segment; keep the
+    highest-uparea reach within max_dist to handle parallel reaches."""
     cols = [COMID_COL, UPAREA_COL, NEXTDOWN_COL, "geometry"]
     joined = gpd.sjoin(
         gdf_segments,
@@ -226,17 +176,13 @@ def assign_reach_to_segments(gdf_segments, gdf_reaches, max_dist):
 
 
 # ============================================================
-# SECTION 5: Trace drainage basins from NextDownID
+# DRAINAGE BASINS
 # ============================================================
 
 
 def trace_basins(gdf_reaches):
-    """
-    Group reaches into drainage basins by following NextDownID downstream to a
-    terminal outlet. A reach is an outlet when NextDownID is a terminal sentinel
-    (<= 0) or points outside the clipped set (river leaves the bbox). Returns a
-    dict {COMID -> basin_id (outlet COMID)}. Memoized, with a cycle guard.
-    """
+    """Group reaches into basins by following NextDownID to a terminal outlet
+    (NextDownID <= 0 or outside the clipped set). Returns {COMID -> outlet COMID}."""
     comids = (
         pd.to_numeric(gdf_reaches[COMID_COL], errors="coerce")
         .fillna(-1)
@@ -259,14 +205,14 @@ def trace_basins(gdf_reaches):
             if cur in basin_of:
                 outlet = basin_of[cur]
                 break
-            if cur in seen:  # cycle in data -> stop here
+            if cur in seen:  # cycle in data, stop here
                 outlet = cur
                 break
             seen.add(cur)
             path.append(cur)
             nd = next_of.get(cur)
             if nd is None or nd <= 0 or nd not in comid_set:
-                outlet = cur  # terminal, or flows out of the clip
+                outlet = cur
                 break
             cur = nd
         for c in path:
@@ -275,7 +221,7 @@ def trace_basins(gdf_reaches):
 
 
 def basin_outlet_locations(gdf_reaches, basin_ids):
-    """Approximate outlet location (representative point) per basin, for the report."""
+    """Representative outlet location per basin, for the report."""
     locs = {}
     for bid in basin_ids:
         sub = gdf_reaches[gdf_reaches[COMID_COL].astype(np.int64) == int(bid)]
@@ -285,11 +231,6 @@ def basin_outlet_locations(gdf_reaches, basin_ids):
         else:
             locs[bid] = (None, None)
     return locs
-
-
-# ============================================================
-# SECTION 6: Filter by upstream area + attach basin_id
-# ============================================================
 
 
 def filter_and_tag(gdf_segments, basin_of, min_uparea):
@@ -303,7 +244,7 @@ def filter_and_tag(gdf_segments, basin_of, min_uparea):
 
 
 def print_basin_report(gdf_segments, gdf_reaches, min_uparea, output_dir, basin_of_all):
-    """Print and save a per-basin summary so the training subset can be chosen."""
+    """Print and save a per-basin summary used to choose the training subset."""
     big = gdf_reaches[gdf_reaches[UPAREA_COL] >= min_uparea].copy()
     big["basin_id"] = (
         pd.to_numeric(big[COMID_COL], errors="coerce").astype("Int64").map(basin_of_all)
@@ -342,7 +283,7 @@ def print_basin_report(gdf_segments, gdf_reaches, min_uparea, output_dir, basin_
 
 
 # ============================================================
-# SECTION 7: Positive patch centers
+# PATCH CENTERS
 # ============================================================
 
 
@@ -354,13 +295,8 @@ def generate_positive_centers(gdf_segments):
     return gdf
 
 
-# ============================================================
-# SECTION 8: Corridor-wide negative patch centers
-# ============================================================
-
-
 def build_corridor(gdf_reaches, min_uparea, buffer_m, basin_of=None, train_basins=None):
-    """Union of large reaches buffered by buffer_m, optionally restricted to train basins."""
+    """Union of large reaches buffered by buffer_m, optionally train basins only."""
     big = gdf_reaches[gdf_reaches[UPAREA_COL] >= min_uparea].copy()
     if train_basins is not None and basin_of is not None:
         big["basin_id"] = (
@@ -373,7 +309,7 @@ def build_corridor(gdf_reaches, min_uparea, buffer_m, basin_of=None, train_basin
 
 
 def sample_corridor_negatives(corridor, exclusion, n, rng, tries_factor):
-    """Uniformly sample n points inside the corridor but outside the exclusion zone."""
+    """Uniformly sample n points inside the corridor, outside the exclusion zone."""
     minx, miny, maxx, maxy = corridor.bounds
     pc, pe = prep(corridor), prep(exclusion)
     pts, tries, cap = [], 0, max(1, n) * tries_factor
@@ -396,19 +332,14 @@ def generate_negative_centers(
     gdf_reaches,
     basin_of,
 ):
-    """
-    Sample corridor-wide negatives. Exclusion is ALL levees buffered (so a
-    negative never lands on a levee of any size). Negatives on water are kept.
-    basin_id is attached via the nearest large reach for record-keeping.
-    """
-    # Exclusion = ANY levee near the corridor, buffered. Negatives are only
-    # sampled inside the corridor, so levees farther than the buffer cannot
-    # affect them; restricting keeps the union cheap.
+    """Sample corridor-wide negatives away from any levee; negatives on water
+    are kept as hard "water, not levee" examples."""
+    # Only levees near the corridor can affect sampling inside it
     near = gdf_levees[gdf_levees.intersects(corridor.buffer(exclusion_buffer))]
     if len(near) > 0:
         exclusion = unary_union(near.geometry.buffer(exclusion_buffer).tolist())
     else:
-        exclusion = Polygon()  # empty -> nothing excluded
+        exclusion = Polygon()
 
     n_neg = int(round(n_positive * ratio))
     pts = sample_corridor_negatives(corridor, exclusion, n_neg, rng, tries_factor)
@@ -419,15 +350,13 @@ def generate_negative_centers(
         crs=f"EPSG:{TARGET_EPSG}",
     )
 
-    # Attach basin_id via nearest large reach (record-keeping + split grouping).
+    # Attach basin_id via the nearest large reach (used for split grouping)
     big = gdf_reaches[gdf_reaches[UPAREA_COL] >= MIN_UPAREA_KM2][
         [COMID_COL, "geometry"]
     ].copy()
     if len(gdf_neg) > 0 and len(big) > 0:
         nearest = gpd.sjoin_nearest(gdf_neg, big, how="left")
-        nearest = nearest[
-            ~nearest.index.duplicated(keep="first")
-        ]  # one row per negative (ties)
+        nearest = nearest[~nearest.index.duplicated(keep="first")]
         gdf_neg["comid"] = nearest[COMID_COL]
         gdf_neg["basin_id"] = gdf_neg["comid"].map(
             lambda c: basin_of.get(int(c)) if pd.notna(c) else np.nan
@@ -441,47 +370,26 @@ def generate_negative_centers(
 
 
 # ============================================================
-# SECTION 9: Raster channel extraction (shared read_window)
+# RASTER CHANNEL EXTRACTION
 # ============================================================
 
 
-def open_raster(path):
-    ds = gdal.Open(str(path))
-    if ds is None:
-        raise RuntimeError(f"Cannot open raster: {path}")
-    return ds
-
-
-def center_in_raster(ds, cx, cy):
-    gt = ds.GetGeoTransform()
-    minx, maxy = gt[0], gt[3]
-    maxx = minx + ds.RasterXSize * gt[1]
-    miny = maxy + ds.RasterYSize * gt[5]
-    return (minx <= cx <= maxx) and (miny <= cy <= maxy)
-
-
 def extract_channels(cx, cy, dsm_ds, canopy_ds, canopy_sd_ds, water_ds):
-    """Return dict of channel arrays for one patch center, or None if outside DSM."""
-    if not center_in_raster(dsm_ds, cx, cy):
+    """Return dict of channel arrays for one patch center, None if outside DSM."""
+    if not Raster.point_in_raster(dsm_ds, cx, cy):
         return None
 
     half = PATCH_SIZE_M / 2.0
     bbox = (cx - half, cy - half, cx + half, cy + half)
 
-    dsm = patch_io.read_window(dsm_ds, bbox, PATCH_SIZE_PX, gdalconst.GRA_Bilinear)
+    dsm = Raster.read_window(dsm_ds, bbox, PATCH_SIZE_PX, "bilinear")
     if np.all(dsm == 0):  # fully out-of-bounds fill
         return None
 
-    canopy = patch_io.read_window(
-        canopy_ds, bbox, PATCH_SIZE_PX, gdalconst.GRA_Bilinear
-    )
-    canopy_sd = patch_io.read_window(
-        canopy_sd_ds, bbox, PATCH_SIZE_PX, gdalconst.GRA_Bilinear
-    )
-    water = patch_io.read_window(
-        water_ds, bbox, PATCH_SIZE_PX, gdalconst.GRA_NearestNeighbour
-    )
-    water = (water > 0.5).astype(np.float32)  # enforce strict 0/1
+    canopy = Raster.read_window(canopy_ds, bbox, PATCH_SIZE_PX, "bilinear")
+    canopy_sd = Raster.read_window(canopy_sd_ds, bbox, PATCH_SIZE_PX, "bilinear")
+    water = Raster.read_window(water_ds, bbox, PATCH_SIZE_PX, "nearest")
+    water = (water > 0.5).astype(np.float32)  # keep strict 0/1
 
     channels = {
         "dsm": dsm.astype(np.float32),
@@ -490,47 +398,12 @@ def extract_channels(cx, cy, dsm_ds, canopy_ds, canopy_sd_ds, water_ds):
         "water": water,
     }
     for r in TPI_RADII_PX:
-        channels[f"tpi_r{r}"] = patch_io.compute_tpi(dsm, r)
+        channels[f"tpi_r{r}"] = Raster.compute_tpi(dsm, r)
     return channels
 
 
 # ============================================================
-# SECTION 10: Per-patch label rasterization (GDAL)
-# ============================================================
-
-
-def rasterize_label(buffered_geoms, geotransform, size_px, srs_wkt):
-    """Rasterize buffered levee polygons onto the patch grid -> uint8 0/1 array."""
-    target = gdal.GetDriverByName("MEM").Create("", size_px, size_px, 1, gdal.GDT_Byte)
-    target.SetGeoTransform(geotransform)
-    target.SetProjection(srs_wkt)
-
-    if buffered_geoms:
-        drv = ogr.GetDriverByName("Memory")
-        vds = drv.CreateDataSource("mem")
-        srs = osr.SpatialReference()
-        srs.ImportFromWkt(srs_wkt)
-        layer = vds.CreateLayer("lev", srs, ogr.wkbPolygon)
-        defn = layer.GetLayerDefn()
-        for g in buffered_geoms:
-            if g is None or g.is_empty:
-                continue
-            feat = ogr.Feature(defn)
-            feat.SetGeometry(ogr.CreateGeometryFromWkb(g.wkb))
-            layer.CreateFeature(feat)
-            feat = None
-        gdal.RasterizeLayer(
-            target, [1], layer, burn_values=[1], options=["ALL_TOUCHED=TRUE"]
-        )
-        vds = None
-
-    arr = target.GetRasterBand(1).ReadAsArray().astype(np.uint8)
-    target = None
-    return arr
-
-
-# ============================================================
-# SECTION 11: Build patches + save
+# BUILD PATCHES + SAVE
 # ============================================================
 
 
@@ -538,16 +411,12 @@ def build_and_save(gdf_centers, gdf_levees, output_dir):
     patches_dir = output_dir / "patches"
     patches_dir.mkdir(parents=True, exist_ok=True)
 
-    srs = osr.SpatialReference()
-    srs.ImportFromEPSG(TARGET_EPSG)
-    srs_wkt = srs.ExportToWkt()
-
     levees_sindex = gdf_levees.sindex
 
-    dsm_ds = open_raster(COPDEM_TIFF)
-    canopy_ds = open_raster(CANOPY_HEIGHT_TIFF)
-    canopy_sd_ds = open_raster(CANOPY_HEIGHT_SD_TIFF)
-    water_ds = open_raster(WATER_TIFF)
+    dsm_ds = Raster.open_raster(COPDEM_TIFF)
+    canopy_ds = Raster.open_raster(CANOPY_HEIGHT_TIFF)
+    canopy_sd_ds = Raster.open_raster(CANOPY_HEIGHT_SD_TIFF)
+    water_ds = Raster.open_raster(WATER_TIFF)
 
     metadata_rows = []
 
@@ -560,7 +429,7 @@ def build_and_save(gdf_centers, gdf_levees, output_dir):
         if channels is None:
             continue
 
-        gt = patch_io.patch_geotransform(cx, cy, PATCH_SIZE_M, PATCH_RES_M)
+        gt = Raster.patch_geotransform(cx, cy, PATCH_SIZE_M, PATCH_RES_M)
 
         # Label: levees intersecting the patch bbox, buffered, rasterized
         half = PATCH_SIZE_M / 2.0
@@ -572,9 +441,10 @@ def build_and_save(gdf_centers, gdf_levees, output_dir):
             cand = gdf_levees.iloc[cand_idx]
             relevant = cand[cand.geometry.intersects(patch_box.buffer(LEVEE_BUFFER_M))]
             buffered = [g.buffer(LEVEE_BUFFER_M) for g in relevant.geometry]
-        label = rasterize_label(buffered, gt, PATCH_SIZE_PX, srs_wkt)
+        label = Raster.rasterize_geometries(
+            buffered, gt, PATCH_SIZE_PX, TARGET_EPSG, all_touched=True
+        )
 
-        # Save .npz
         patch_id = row["patch_id"]
         out = {k: channels[k] for k in CHANNEL_KEYS}
         out["label"] = label
@@ -611,7 +481,7 @@ def build_and_save(gdf_centers, gdf_levees, output_dir):
 
 
 def categorize_uparea(u):
-    """Coarse label kept only so downstream per-category reporting still works."""
+    """Coarse size class kept for per-category reporting downstream."""
     if u is None or (isinstance(u, float) and np.isnan(u)):
         return None
     return "L" if u >= 10000 else "M"
@@ -625,29 +495,26 @@ def categorize_uparea(u):
 def main():
     rng = np.random.default_rng(SEED)
 
-    # Section 2: load inputs (vectors)
-    gdf_levees = load_bdot_levees(BDOT_GPKG, TARGET_CRS)
-    gdf_reaches = load_merit_reaches(MERIT_GPKG, POLAND_BBOX_WGS84, TARGET_CRS)
+    # Vector inputs
+    gdf_levees = load_bdot_levees(BDOT_GPKG, TARGET_EPSG)
+    gdf_reaches = load_merit_reaches(MERIT_GPKG, POLAND_BBOX_WGS84, TARGET_EPSG)
 
-    # Section 3-4: segment + attach nearest reach
+    # Segment levees + attach the nearest reach
     gdf_segments = segment_levees(gdf_levees, SEGMENT_LENGTH_M, MIN_LEVEE_LENGTH_M)
     gdf_segments = assign_reach_to_segments(
         gdf_segments, gdf_reaches, MAX_DIST_TO_REACH_M
     )
 
-    # Section 5-6: basins + uparea filter + basin tag
+    # Basins + uparea filter + basin tag
     basin_of = trace_basins(gdf_reaches)
     gdf_segments = filter_and_tag(gdf_segments, basin_of, MIN_UPAREA_KM2)
     gdf_segments["category"] = gdf_segments[UPAREA_COL].apply(categorize_uparea)
 
     if len(gdf_segments) == 0:
-        raise RuntimeError(
-            "No segments left after uparea filter; lower MIN_UPAREA_KM2?"
-        )
+        raise RuntimeError("No segments left after uparea filter; lower MIN_UPAREA_KM2?")
 
-    # Basin report (always printed)
     print_basin_report(gdf_segments, gdf_reaches, MIN_UPAREA_KM2, OUTPUT_DIR, basin_of)
-    gdf_segments.to_file(OUTPUT_DIR / "segments_filtered.gpkg", driver="GPKG")
+    Vector.save_vector(gdf_segments, OUTPUT_DIR / "segments_filtered.gpkg")
 
     if REPORT_BASINS_ONLY:
         print(
@@ -669,10 +536,9 @@ def main():
         if len(gdf_segments) == 0:
             raise RuntimeError("TRAIN_BASINS selected no segments; check basin ids.")
 
-    # Section 7: positive centers
+    # Patch centers
     gdf_pos = generate_positive_centers(gdf_segments)
 
-    # Section 8: corridor-wide negatives
     corridor = build_corridor(
         gdf_reaches, MIN_UPAREA_KM2, RIVER_BUFFER_M, basin_of, TRAIN_BASINS
     )
@@ -692,8 +558,8 @@ def main():
         f"(target ratio {NEG_POS_RATIO}:1)"
     )
 
-    gdf_pos.to_file(OUTPUT_DIR / "patch_centers_positive.gpkg", driver="GPKG")
-    gdf_neg.to_file(OUTPUT_DIR / "patch_centers_negative.gpkg", driver="GPKG")
+    Vector.save_vector(gdf_pos, OUTPUT_DIR / "patch_centers_positive.gpkg")
+    Vector.save_vector(gdf_neg, OUTPUT_DIR / "patch_centers_negative.gpkg")
 
     # Combine centers
     keep_cols = [
@@ -715,14 +581,14 @@ def main():
         crs=f"EPSG:{TARGET_EPSG}",
     )
 
-    # Coalesce positives' COMID and negatives' comid into one 'comid' column,
-    # so every patch has a reach id for the train/val/test grouping downstream.
+    # Coalesce positives' COMID and negatives' comid into one column so every
+    # patch carries a reach id for the train/val/test grouping downstream
     if "comid" not in gdf_all.columns:
         gdf_all["comid"] = np.nan
     if COMID_COL in gdf_all.columns:
         gdf_all["comid"] = gdf_all["comid"].fillna(gdf_all[COMID_COL])
 
-    # Section 9-11: extract channels, rasterize labels, save
+    # Extract channels, rasterize labels, save
     build_and_save(gdf_all, gdf_levees, OUTPUT_DIR)
 
 
