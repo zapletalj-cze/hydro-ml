@@ -1,0 +1,35 @@
+# Levee-detection package: toolset library + pipeline scripts
+# Install the toolset with:  pip install .
+# Optional dependency groups cover the raster, ML and SFINCS tools.
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "levee-toolset"
+version = "0.1.0"
+description = "Toolset for DSM-based levee detection and SFINCS scenario modelling"
+authors = [{ name = "Jakub Zapletal" }]
+requires-python = ">=3.12"
+dependencies = [
+    "numpy",
+    "pandas",
+    "geopandas>=1.0",
+    "shapely>=2.0",
+    "tqdm",
+]
+
+[project.optional-dependencies]
+raster = ["gdal>=3.8", "scipy"]
+ml = [
+    "torch>=2.5",
+    "segmentation-models-pytorch>=0.5",
+    "scikit-image",
+    "networkx",
+    "matplotlib",
+]
+sfincs = ["hydromt_sfincs>=2.0.0"]
+
+[tool.setuptools]
+packages = ["toolset"]

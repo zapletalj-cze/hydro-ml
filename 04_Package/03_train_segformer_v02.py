@@ -18,9 +18,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.cuda.amp import autocast
@@ -29,7 +27,8 @@ import matplotlib
 
 matplotlib.use("Agg")  # no display required when running headless
 import matplotlib.pyplot as plt
-import segmentation_models_pytorch as smp
+
+from toolset import models
 
 # ============================================================
 # CONFIG
@@ -37,23 +36,13 @@ import segmentation_models_pytorch as smp
 
 # ------- Paths ----------------------------------------------
 # Two training sources; the held-out basin is evaluated separately
-PATCHES_DIR_USA = Path(
-    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\patches_v02_USA\patches"
-)
-PATCHES_DIR_PL = Path(
-    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\patches\patches_PL_train\patches"
-)
-METADATA_CSV_USA = Path(
-    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\patches_v02_USA\patches_metadata.csv"
-)
-METADATA_CSV_PL = Path(
-    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\patches\patches_PL_train\patches_metadata.csv"
-)
+PATCHES_DIR_USA = Path("data/patches_USA/patches")
+PATCHES_DIR_PL = Path("data/patches_PL/patches")
+METADATA_CSV_USA = Path("data/patches_USA/patches_metadata.csv")
+METADATA_CSV_PL = Path("data/patches_PL/patches_metadata.csv")
 
 # Output dir, unique per variant
-OUTPUT_DIR = Path(
-    r"D:\90_PersonalFoldlers\JZa\DataProcessing\levees_detection\geomorphological_ML\_FINAL_EVAL\training_v06_segformer_PL_US"
-)
+OUTPUT_DIR = Path("output/training_segformer")
 IMG_DIR = OUTPUT_DIR / "img"
 
 
@@ -107,14 +96,12 @@ BCE_POS_WEIGHT = 20.0
 # One of: "resnet_unet" | "segformer" | "deeplabv3plus"
 ARCHITECTURE = "segformer"
 
-RESNET_BACKBONE = "resnet34"
-SEGFORMER_BACKBONE = "mit_b2"
-DEEPLAB_BACKBONE = "resnet50"
-
-RESNET_ENCODER_WEIGHTS = "imagenet"
-DEEPLAB_ENCODER_WEIGHTS = "imagenet"
-SEGFORMER_ENCODER_WEIGHTS = "imagenet"
-
+BACKBONES = {
+    "resnet_unet": "resnet34",
+    "segformer": "mit_b2",
+    "deeplabv3plus": "resnet50",
+}
+ENCODER_WEIGHTS = "imagenet"
 DECODER_DROPOUT_P = 0.1
 
 
@@ -131,6 +118,13 @@ SAVE_PREDICTIONS = True  # save per-patch val predictions for stacking
 # Derived
 N_INPUT_CHANNELS = len(INPUT_CHANNELS)
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+PATCHES_ROOT_DIRS = {"USA": PATCHES_DIR_USA, "PL": PATCHES_DIR_PL}
+
+
+def loss_fn(pred, target):
+    return models.combined_loss(
+        pred, target, BCE_POS_WEIGHT, LOSS_DICE_WEIGHT, CLDICE_ITER
+    )
 
 
 # ============================================================
@@ -162,269 +156,6 @@ def setup_logging(output_dir):
     log.info("Training run started")
     log.info(f"Output dir: {output_dir}")
     return log
-
-
-# ============================================================
-# DATASET
-# ============================================================
-
-
-class LeveeDataset(Dataset):
-    """
-    Loads .npz patches and applies normalization + augmentation.
-    Each sample is a dict with: image (C,H,W) tensor, label (1,H,W) tensor,
-    patch_id (str), category (str).
-    """
-
-    def __init__(
-        self, metadata_df, patches_root_dirs, input_channels, norm_stats, augment=False
-    ):
-        self.metadata = metadata_df.reset_index(drop=True)
-        self.patches_root_dirs = patches_root_dirs
-        self.input_channels = input_channels
-        self.norm_stats = norm_stats
-        self.augment = augment
-
-    def __len__(self):
-        return len(self.metadata)
-
-    def _load_npz(self, row):
-        region = row["region"]
-        npz_path = self.patches_root_dirs[region] / f"{row['patch_id']}.npz"
-        return dict(np.load(npz_path))
-
-    def _normalize(self, channels):
-        out = {}
-        for ch_name in self.input_channels:
-            arr = channels[ch_name].astype(np.float32)
-            arr = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
-            if ch_name == "dsm":
-                arr = arr - np.median(arr)
-            elif ch_name == WATER_CHANNEL:
-                pass  # binary mask, leave as 0/1
-            else:
-                stats = self.norm_stats[ch_name]
-                arr = (arr - stats["mean"]) / (stats["std"] + 1e-6)
-            out[ch_name] = arr
-        return out
-
-    def _augment(self, image, label):
-        if USE_ROT_90:
-            k = np.random.randint(0, 4)
-            if k > 0:
-                image = np.rot90(image, k=k, axes=(1, 2)).copy()
-                label = np.rot90(label, k=k, axes=(1, 2)).copy()
-        if USE_FLIP_H and np.random.rand() < 0.5:
-            image = np.flip(image, axis=2).copy()
-            label = np.flip(label, axis=2).copy()
-        if USE_FLIP_V and np.random.rand() < 0.5:
-            image = np.flip(image, axis=1).copy()
-            label = np.flip(label, axis=1).copy()
-        return image, label
-
-    def __getitem__(self, idx):
-        row = self.metadata.iloc[idx]
-        channels = self._load_npz(row)
-        channels_norm = self._normalize(channels)
-
-        image = np.stack([channels_norm[c] for c in self.input_channels], axis=0)
-        label = channels[LABEL_CHANNEL].astype(np.float32)[np.newaxis, ...]
-
-        if self.augment:
-            image, label = self._augment(image, label)
-
-        cat = row["category"]
-        if pd.isna(cat):  # negatives have no category
-            cat = row["patch_type"]
-
-        return {
-            "image": torch.from_numpy(image),
-            "label": torch.from_numpy(label),
-            "patch_id": row["patch_id"],
-            "category": str(cat),
-        }
-
-
-# ============================================================
-# LOSS
-# ============================================================
-
-
-def soft_skeleton(x, n_iter):
-    def soft_erode(img):
-        p1 = -F.max_pool2d(-img, (3, 1), stride=1, padding=(1, 0))
-        p2 = -F.max_pool2d(-img, (1, 3), stride=1, padding=(0, 1))
-        return torch.min(p1, p2)
-
-    def soft_dilate(img):
-        return F.max_pool2d(img, (3, 3), stride=1, padding=1)
-
-    def soft_open(img):
-        return soft_dilate(soft_erode(img))
-
-    skel = F.relu(x - soft_open(x))
-    img = x
-    for _ in range(n_iter):
-        img = soft_erode(img)
-        skel = skel + F.relu(img - soft_open(img)) * (1.0 - skel)
-    return skel
-
-
-def dice_loss(pred, target, eps=1e-6):
-    pred = torch.sigmoid(pred)
-    intersection = (pred * target).sum(dim=(1, 2, 3))
-    union = pred.sum(dim=(1, 2, 3)) + target.sum(dim=(1, 2, 3))
-    dice = (2 * intersection + eps) / (union + eps)
-    return 1 - dice.mean()
-
-
-def cldice_loss(pred, target, n_iter, eps=1e-6):
-    pred = torch.sigmoid(pred)
-    skel_pred = soft_skeleton(pred, n_iter)
-    skel_target = soft_skeleton(target, n_iter)
-
-    tprec = (skel_pred * target).sum(dim=(1, 2, 3)) + eps
-    tprec = tprec / (skel_pred.sum(dim=(1, 2, 3)) + eps)
-
-    trec = (pred * skel_target).sum(dim=(1, 2, 3)) + eps
-    trec = trec / (skel_target.sum(dim=(1, 2, 3)) + eps)
-
-    cldice = 2 * tprec * trec / (tprec + trec)
-    return 1 - cldice.mean()
-
-
-def combined_loss(pred, target):
-    pw = torch.tensor(BCE_POS_WEIGHT, device=pred.device, dtype=pred.dtype)
-    l_bce = F.binary_cross_entropy_with_logits(pred, target, pos_weight=pw)
-    l_dice = dice_loss(pred, target)
-    l_cldice = cldice_loss(pred, target, n_iter=CLDICE_ITER)
-    return l_bce + LOSS_DICE_WEIGHT * l_dice + (1 - LOSS_DICE_WEIGHT) * l_cldice
-
-
-# ============================================================
-# MODEL
-# ============================================================
-
-
-def adapt_first_conv_for_extra_channels(model, n_input_channels):
-    """Replicate 3-channel pretrained first-conv weights for N-channel input (ResNet family)."""
-    encoder = model.encoder
-    if not hasattr(encoder, "conv1"):
-        raise RuntimeError("Encoder has no conv1 - unknown structure")
-
-    first_conv = encoder.conv1
-    old_weight = first_conv.weight.data
-    out_ch, _, kh, kw = old_weight.shape
-
-    new_weight = old_weight.repeat(1, (n_input_channels // 3) + 1, 1, 1)
-    new_weight = new_weight[:, :n_input_channels, :, :]
-    new_weight = new_weight / (n_input_channels / 3)
-
-    new_conv = nn.Conv2d(
-        n_input_channels,
-        out_ch,
-        kernel_size=(kh, kw),
-        stride=first_conv.stride,
-        padding=first_conv.padding,
-        bias=first_conv.bias is not None,
-    )
-    new_conv.weight.data = new_weight
-    if first_conv.bias is not None:
-        new_conv.bias.data = first_conv.bias.data.clone()
-
-    encoder.conv1 = new_conv
-    return model
-
-
-def adapt_first_conv_segformer(model, n_input_channels):
-    """Replicate 3-channel pretrained patch_embed1.proj weights for N-channel input."""
-    encoder = model.encoder
-    if not hasattr(encoder, "patch_embed1"):
-        raise RuntimeError("SegFormer encoder has no patch_embed1 - check smp version")
-
-    first_conv = encoder.patch_embed1.proj
-    old_weight = first_conv.weight.data
-    out_ch, _, kh, kw = old_weight.shape
-
-    new_weight = old_weight.repeat(1, (n_input_channels // 3) + 1, 1, 1)
-    new_weight = new_weight[:, :n_input_channels, :, :]
-    new_weight = new_weight / (n_input_channels / 3)
-
-    new_conv = nn.Conv2d(
-        n_input_channels,
-        out_ch,
-        kernel_size=(kh, kw),
-        stride=first_conv.stride,
-        padding=first_conv.padding,
-        bias=first_conv.bias is not None,
-    )
-    new_conv.weight.data = new_weight
-    if first_conv.bias is not None:
-        new_conv.bias.data = first_conv.bias.data.clone()
-
-    encoder.patch_embed1.proj = new_conv
-    return model
-
-
-def build_model():
-    """Build model based on ARCHITECTURE, with first-conv channel adaptation and decoder dropout."""
-    if ARCHITECTURE == "resnet_unet":
-        model = smp.Unet(
-            encoder_name=RESNET_BACKBONE,
-            encoder_weights=RESNET_ENCODER_WEIGHTS,
-            in_channels=3,
-            classes=1,
-            activation=None,
-        )
-        model = adapt_first_conv_for_extra_channels(model, N_INPUT_CHANNELS)
-
-    elif ARCHITECTURE == "segformer":
-        model = smp.Segformer(
-            encoder_name=SEGFORMER_BACKBONE,
-            encoder_weights=SEGFORMER_ENCODER_WEIGHTS,
-            in_channels=3,
-            classes=1,
-            activation=None,
-        )
-        model = adapt_first_conv_segformer(model, N_INPUT_CHANNELS)
-
-    elif ARCHITECTURE == "deeplabv3plus":
-        model = smp.DeepLabV3Plus(
-            encoder_name=DEEPLAB_BACKBONE,
-            encoder_weights=DEEPLAB_ENCODER_WEIGHTS,
-            in_channels=3,
-            classes=1,
-            activation=None,
-        )
-        model = adapt_first_conv_for_extra_channels(model, N_INPUT_CHANNELS)
-
-    else:
-        raise ValueError(f"Unknown architecture: {ARCHITECTURE}")
-
-    if ARCHITECTURE == "resnet_unet":
-        for block in model.decoder.blocks:
-            block.conv2 = nn.Sequential(block.conv2, nn.Dropout2d(p=DECODER_DROPOUT_P))
-        logging.info(
-            f"Decoder dropout: {DECODER_DROPOUT_P} (applied to {len(model.decoder.blocks)} U-Net blocks)"
-        )
-    elif ARCHITECTURE == "deeplabv3plus":
-        if hasattr(model.decoder, "block2"):
-            model.decoder.block2 = nn.Sequential(
-                model.decoder.block2, nn.Dropout2d(p=DECODER_DROPOUT_P)
-            )
-            logging.info(
-                f"Decoder dropout: {DECODER_DROPOUT_P} (applied to DeepLabV3+ block2)"
-            )
-        else:
-            logging.warning("DeepLabV3+ decoder.block2 not found - skipping dropout")
-    elif ARCHITECTURE == "segformer":
-        logging.info("No decoder dropout for SegFormer (lightweight MLP head)")
-
-    model = model.to(DEVICE)
-    n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    logging.info(f"Architecture: {ARCHITECTURE}")
-    logging.info(f"Trainable parameters: {n_params:,}")
-    return model
 
 
 # ============================================================
@@ -478,8 +209,7 @@ def load_and_split_metadata():
 
 
 def compute_or_load_norm_stats(df_train):
-    """Compute per-channel normalization statistics on the train set. DSM (per-patch
-    median) and the binary water mask are excluded; everything else is z-scored."""
+    """Load cached normalization stats or compute them on the train set."""
     norm_stats_path = OUTPUT_DIR / "norm_stats.json"
 
     if norm_stats_path.exists():
@@ -487,34 +217,9 @@ def compute_or_load_norm_stats(df_train):
         with open(norm_stats_path) as f:
             return json.load(f)
 
-    channels_to_normalize = [
-        c for c in INPUT_CHANNELS if c not in ("dsm", WATER_CHANNEL)
-    ]
-    sums = {c: 0.0 for c in channels_to_normalize}
-    sq_sums = {c: 0.0 for c in channels_to_normalize}
-    counts = {c: 0 for c in channels_to_normalize}
-
-    patches_root_dirs = {"USA": PATCHES_DIR_USA, "PL": PATCHES_DIR_PL}
-    for _, row in tqdm(
-        df_train.iterrows(), total=len(df_train), desc="Computing norm stats"
-    ):
-        npz_path = patches_root_dirs[row["region"]] / f"{row['patch_id']}.npz"
-        channels = dict(np.load(npz_path))
-        for c in channels_to_normalize:
-            arr = np.nan_to_num(channels[c].astype(np.float64))
-            sums[c] += arr.sum()
-            sq_sums[c] += (arr**2).sum()
-            counts[c] += arr.size
-
-    norm_stats = {}
-    for c in channels_to_normalize:
-        mean = sums[c] / counts[c]
-        var = sq_sums[c] / counts[c] - mean**2
-        std = np.sqrt(max(var, 1e-12))
-        norm_stats[c] = {"mean": float(mean), "std": float(std)}
-
-    norm_stats["dsm"] = {"mean": 0.0, "std": 1.0}  # sentinel; per-patch normalized
-    norm_stats[WATER_CHANNEL] = {"mean": 0.0, "std": 1.0}  # sentinel; kept as 0/1
+    norm_stats = models.compute_norm_stats(
+        df_train, PATCHES_ROOT_DIRS, INPUT_CHANNELS, exclude=("dsm", WATER_CHANNEL)
+    )
 
     with open(norm_stats_path, "w") as f:
         json.dump(norm_stats, f, indent=2)
@@ -527,14 +232,24 @@ def compute_or_load_norm_stats(df_train):
     return norm_stats
 
 
+def make_dataset(df, norm_stats, augment):
+    return models.LeveeDataset(
+        df,
+        PATCHES_ROOT_DIRS,
+        INPUT_CHANNELS,
+        norm_stats,
+        label_channel=LABEL_CHANNEL,
+        water_channel=WATER_CHANNEL,
+        augment=augment,
+        flip_h=USE_FLIP_H,
+        flip_v=USE_FLIP_V,
+        rot90=USE_ROT_90,
+    )
+
+
 def build_dataloaders(df_train, df_val, norm_stats):
-    patches_root_dirs = {"USA": PATCHES_DIR_USA, "PL": PATCHES_DIR_PL}
-    train_ds = LeveeDataset(
-        df_train, patches_root_dirs, INPUT_CHANNELS, norm_stats, augment=True
-    )
-    val_ds = LeveeDataset(
-        df_val, patches_root_dirs, INPUT_CHANNELS, norm_stats, augment=False
-    )
+    train_ds = make_dataset(df_train, norm_stats, augment=True)
+    val_ds = make_dataset(df_val, norm_stats, augment=False)
 
     train_loader = DataLoader(
         train_ds,
@@ -555,11 +270,16 @@ def build_dataloaders(df_train, df_val, norm_stats):
         persistent_workers=(NUM_WORKERS > 0),
         prefetch_factor=4 if NUM_WORKERS > 0 else None,
     )
-    return train_loader, val_loader, patches_root_dirs
+    return train_loader, val_loader
 
 
-def select_positive_patch_ids(df_split, n_required, split_name, patches_root_dirs):
-    """Select deterministic positive patch_ids by validating label pixels in NPZ files."""
+# ============================================================
+# FIXED MONITORING LOCATIONS
+# ============================================================
+
+
+def select_positive_patch_ids(df_split, n_required, split_name):
+    """Select deterministic positive patch_ids by validating label pixels."""
     rng = np.random.default_rng(SEED + (0 if split_name == "train" else 10_000))
     df_shuffled = df_split.sample(
         frac=1, random_state=int(rng.integers(2**31))
@@ -568,7 +288,7 @@ def select_positive_patch_ids(df_split, n_required, split_name, patches_root_dir
     selected = []
     for _, row in df_shuffled.iterrows():
         pid = str(row["patch_id"])
-        npz_path = patches_root_dirs[row["region"]] / f"{pid}.npz"
+        npz_path = PATCHES_ROOT_DIRS[row["region"]] / f"{pid}.npz"
         if not npz_path.exists():
             continue
 
@@ -576,7 +296,7 @@ def select_positive_patch_ids(df_split, n_required, split_name, patches_root_dir
         label = np.nan_to_num(channels[LABEL_CHANNEL].astype(np.float32), nan=0.0)
         if float(label.sum()) > 0:
             selected.append(
-                {"patch_id": pid, "patches_root": str(patches_root_dirs[row["region"]])}
+                {"patch_id": pid, "patches_root": str(PATCHES_ROOT_DIRS[row["region"]])}
             )
             if len(selected) == n_required:
                 break
@@ -588,14 +308,10 @@ def select_positive_patch_ids(df_split, n_required, split_name, patches_root_dir
     return selected
 
 
-def build_fixed_locations(df_train, df_val, patches_root_dirs):
+def build_fixed_locations(df_train, df_val):
     """Create 6 fixed monitoring locations: 3 train + 3 val, all positive."""
-    train_entries = select_positive_patch_ids(
-        df_train, n_required=3, split_name="train", patches_root_dirs=patches_root_dirs
-    )
-    val_entries = select_positive_patch_ids(
-        df_val, n_required=3, split_name="val", patches_root_dirs=patches_root_dirs
-    )
+    train_entries = select_positive_patch_ids(df_train, 3, "train")
+    val_entries = select_positive_patch_ids(df_val, 3, "val")
 
     fixed_locations = []
     for i, entry in enumerate(train_entries, start=1):
@@ -619,24 +335,7 @@ def build_fixed_locations(df_train, df_val, patches_root_dirs):
     return fixed_locations
 
 
-def _normalize_channels_for_inference(channels, norm_stats):
-    """Normalize channels exactly like LeveeDataset._normalize for fixed-location rendering."""
-    out = {}
-    for ch_name in INPUT_CHANNELS:
-        arr = channels[ch_name].astype(np.float32)
-        arr = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
-        if ch_name == "dsm":
-            arr = arr - np.median(arr)
-        elif ch_name == WATER_CHANNEL:
-            pass
-        else:
-            stats = norm_stats[ch_name]
-            arr = (arr - stats["mean"]) / (stats["std"] + 1e-6)
-        out[ch_name] = arr
-    return out
-
-
-def save_fixed_location_images(model, norm_stats, fixed_locations, epoch, out_dir, patches_root_dirs):
+def save_fixed_location_images(model, norm_stats, fixed_locations, epoch, out_dir):
     """Save per-epoch prediction visuals for fixed train/val locations."""
     model.eval()
     with torch.no_grad():
@@ -648,7 +347,9 @@ def save_fixed_location_images(model, norm_stats, fixed_locations, epoch, out_di
 
             npz_path = Path(loc["patches_root"]) / f"{patch_id}.npz"
             channels = dict(np.load(npz_path))
-            channels_norm = _normalize_channels_for_inference(channels, norm_stats)
+            channels_norm = models.normalize_channel_dict(
+                channels, INPUT_CHANNELS, norm_stats, WATER_CHANNEL
+            )
 
             image = np.stack([channels_norm[c] for c in INPUT_CHANNELS], axis=0)
             label = channels[LABEL_CHANNEL].astype(np.float32)
@@ -697,8 +398,13 @@ def save_fixed_location_images(model, norm_stats, fixed_locations, epoch, out_di
             plt.close(fig)
 
 
+# ============================================================
+# DASHBOARDS
+# ============================================================
+
+
 def save_epoch_dashboard(history, epoch, preview_batch, out_dir, is_best=False):
-    """Save a visually rich per-epoch dashboard with curves and prediction previews."""
+    """Save a per-epoch dashboard with curves and prediction previews."""
     out_dir.mkdir(parents=True, exist_ok=True)
 
     fig = plt.figure(figsize=(18, 10), dpi=130)
@@ -747,7 +453,7 @@ def save_epoch_dashboard(history, epoch, preview_batch, out_dir, is_best=False):
             gt = label[row, 0].numpy()
             pp = pred_prob[row, 0].numpy()
 
-            # Robust display scaling for DSM to improve visual readability.
+            # Robust display scaling for DSM
             dsm_lo, dsm_hi = np.percentile(dsm, [2, 98])
             if dsm_hi <= dsm_lo:
                 dsm_lo, dsm_hi = float(dsm.min()), float(dsm.max() + 1e-6)
@@ -778,157 +484,6 @@ def save_epoch_dashboard(history, epoch, preview_batch, out_dir, is_best=False):
     if is_best:
         fig.savefig(out_dir / "best.png", bbox_inches="tight")
     plt.close(fig)
-
-
-# ============================================================
-# TRAIN
-# ============================================================
-
-
-def train(model, train_loader, val_loader, norm_stats, fixed_locations, patches_root_dirs):
-    optimizer = AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
-    scheduler = CosineAnnealingLR(optimizer, T_max=N_EPOCHS, eta_min=LR * 0.01)
-    scaler = torch.amp.GradScaler(device="cuda", enabled=MIXED_PRECISION)
-
-    history = {
-        "epoch": [],
-        "train_loss": [],
-        "val_loss": [],
-        "val_dice": [],
-        "val_cldice": [],
-        "val_score": [],
-        "lr": [],
-    }
-    best_val_score = -float("inf")
-    checkpoint_path = OUTPUT_DIR / "best_model.pt"
-
-    for epoch in range(N_EPOCHS):
-        # --- Train epoch ---
-        model.train()
-        train_loss_sum, n_train_batches = 0.0, 0
-
-        for batch in tqdm(train_loader, desc=f"Epoch {epoch+1}/{N_EPOCHS} [train]"):
-            image = batch["image"].to(DEVICE, non_blocking=True)
-            label = batch["label"].to(DEVICE, non_blocking=True)
-
-            optimizer.zero_grad(set_to_none=True)
-            with autocast(enabled=MIXED_PRECISION):
-                pred = model(image)
-                loss = combined_loss(pred, label)
-
-            scaler.scale(loss).backward()
-            scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), GRAD_CLIP)
-            scaler.step(optimizer)
-            scaler.update()
-
-            train_loss_sum += loss.item()
-            n_train_batches += 1
-
-        train_loss = train_loss_sum / n_train_batches
-
-        # --- Validation ---
-        model.eval()
-        val_loss_sum, val_dice_sum, val_cldice_sum, n_val_batches = 0.0, 0.0, 0.0, 0
-
-        preview_batch = None
-        with torch.no_grad():
-            for batch in tqdm(val_loader, desc=f"Epoch {epoch+1}/{N_EPOCHS} [val]"):
-                image = batch["image"].to(DEVICE, non_blocking=True)
-                label = batch["label"].to(DEVICE, non_blocking=True)
-
-                with autocast(enabled=MIXED_PRECISION):
-                    pred = model(image)
-                    loss = combined_loss(pred, label)
-                    pred_prob = torch.sigmoid(pred)
-
-                if preview_batch is None:
-                    n_preview = min(2, image.size(0))
-                    preview_batch = {
-                        "image": image[:n_preview].detach().cpu(),
-                        "label": label[:n_preview].detach().cpu(),
-                        "pred_prob": pred_prob[:n_preview].detach().cpu(),
-                    }
-
-                val_loss_sum += loss.item()
-                pred_bin = (pred_prob > 0.5).float()
-
-                inter = (pred_bin * label).sum(dim=(1, 2, 3))
-                union = pred_bin.sum(dim=(1, 2, 3)) + label.sum(dim=(1, 2, 3))
-                dice = (2 * inter + 1e-6) / (union + 1e-6)
-                val_dice_sum += dice.mean().item()
-
-                skel_p = soft_skeleton(pred_bin, CLDICE_ITER)
-                skel_l = soft_skeleton(label, CLDICE_ITER)
-                tprec = ((skel_p * label).sum(dim=(1, 2, 3)) + 1e-6) / (
-                    skel_p.sum(dim=(1, 2, 3)) + 1e-6
-                )
-                trec = ((pred_bin * skel_l).sum(dim=(1, 2, 3)) + 1e-6) / (
-                    skel_l.sum(dim=(1, 2, 3)) + 1e-6
-                )
-                cldice = 2 * tprec * trec / (tprec + trec)
-                val_cldice_sum += cldice.mean().item()
-
-                n_val_batches += 1
-
-        val_loss = val_loss_sum / n_val_batches
-        val_dice = val_dice_sum / n_val_batches
-        val_cldice = val_cldice_sum / n_val_batches
-        val_score = (val_dice + val_cldice) / 2
-
-        current_lr = optimizer.param_groups[0]["lr"]
-        history["epoch"].append(epoch + 1)
-        history["train_loss"].append(train_loss)
-        history["val_loss"].append(val_loss)
-        history["val_dice"].append(val_dice)
-        history["val_cldice"].append(val_cldice)
-        history["val_score"].append(val_score)
-        history["lr"].append(current_lr)
-
-        scheduler.step()
-
-        logging.info(
-            f"Epoch {epoch+1:3d} | "
-            f"train_loss={train_loss:.4f} | val_loss={val_loss:.4f} | "
-            f"val_dice={val_dice:.4f} | val_cldice={val_cldice:.4f} | "
-            f"val_score={val_score:.4f} | lr={current_lr:.2e}"
-        )
-
-        is_best = val_score > best_val_score
-        if is_best:
-            best_val_score = val_score
-            torch.save(
-                {
-                    "epoch": epoch + 1,
-                    "model_state": model.state_dict(),
-                    "optimizer_state": optimizer.state_dict(),
-                    "val_loss": val_loss,
-                    "val_dice": val_dice,
-                    "val_cldice": val_cldice,
-                    "val_score": val_score,
-                },
-                checkpoint_path,
-            )
-            logging.info(f"  -> new best (val_score={val_score:.4f}); saved checkpoint")
-
-        save_epoch_dashboard(
-            history=history,
-            epoch=epoch + 1,
-            preview_batch=preview_batch,
-            out_dir=IMG_DIR,
-            is_best=is_best,
-        )
-        save_fixed_location_images(
-            model=model,
-            norm_stats=norm_stats,
-            fixed_locations=fixed_locations,
-            epoch=epoch + 1,
-            out_dir=IMG_DIR,
-            patches_root_dirs=patches_root_dirs,
-        )
-
-    pd.DataFrame(history).to_csv(OUTPUT_DIR / "training_history.csv", index=False)
-    return history, checkpoint_path
 
 
 def plot_training_curves(history):
@@ -1087,11 +642,161 @@ def save_final_summary_graph(history, out_dir):
 
 
 # ============================================================
+# TRAIN
+# ============================================================
+
+
+def train(model, train_loader, val_loader, norm_stats, fixed_locations):
+    optimizer = AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
+    scheduler = CosineAnnealingLR(optimizer, T_max=N_EPOCHS, eta_min=LR * 0.01)
+    scaler = torch.amp.GradScaler(device="cuda", enabled=MIXED_PRECISION)
+
+    history = {
+        "epoch": [],
+        "train_loss": [],
+        "val_loss": [],
+        "val_dice": [],
+        "val_cldice": [],
+        "val_score": [],
+        "lr": [],
+    }
+    best_val_score = -float("inf")
+    checkpoint_path = OUTPUT_DIR / "best_model.pt"
+
+    for epoch in range(N_EPOCHS):
+        # --- Train epoch ---
+        model.train()
+        train_loss_sum, n_train_batches = 0.0, 0
+
+        for batch in tqdm(train_loader, desc=f"Epoch {epoch+1}/{N_EPOCHS} [train]"):
+            image = batch["image"].to(DEVICE, non_blocking=True)
+            label = batch["label"].to(DEVICE, non_blocking=True)
+
+            optimizer.zero_grad(set_to_none=True)
+            with autocast(enabled=MIXED_PRECISION):
+                pred = model(image)
+                loss = loss_fn(pred, label)
+
+            scaler.scale(loss).backward()
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), GRAD_CLIP)
+            scaler.step(optimizer)
+            scaler.update()
+
+            train_loss_sum += loss.item()
+            n_train_batches += 1
+
+        train_loss = train_loss_sum / n_train_batches
+
+        # --- Validation ---
+        model.eval()
+        val_loss_sum, val_dice_sum, val_cldice_sum, n_val_batches = 0.0, 0.0, 0.0, 0
+
+        preview_batch = None
+        with torch.no_grad():
+            for batch in tqdm(val_loader, desc=f"Epoch {epoch+1}/{N_EPOCHS} [val]"):
+                image = batch["image"].to(DEVICE, non_blocking=True)
+                label = batch["label"].to(DEVICE, non_blocking=True)
+
+                with autocast(enabled=MIXED_PRECISION):
+                    pred = model(image)
+                    loss = loss_fn(pred, label)
+                    pred_prob = torch.sigmoid(pred)
+
+                if preview_batch is None:
+                    n_preview = min(2, image.size(0))
+                    preview_batch = {
+                        "image": image[:n_preview].detach().cpu(),
+                        "label": label[:n_preview].detach().cpu(),
+                        "pred_prob": pred_prob[:n_preview].detach().cpu(),
+                    }
+
+                val_loss_sum += loss.item()
+                pred_bin = (pred_prob > 0.5).float()
+
+                inter = (pred_bin * label).sum(dim=(1, 2, 3))
+                union = pred_bin.sum(dim=(1, 2, 3)) + label.sum(dim=(1, 2, 3))
+                dice = (2 * inter + 1e-6) / (union + 1e-6)
+                val_dice_sum += dice.mean().item()
+
+                skel_p = models.soft_skeleton(pred_bin, CLDICE_ITER)
+                skel_l = models.soft_skeleton(label, CLDICE_ITER)
+                tprec = ((skel_p * label).sum(dim=(1, 2, 3)) + 1e-6) / (
+                    skel_p.sum(dim=(1, 2, 3)) + 1e-6
+                )
+                trec = ((pred_bin * skel_l).sum(dim=(1, 2, 3)) + 1e-6) / (
+                    skel_l.sum(dim=(1, 2, 3)) + 1e-6
+                )
+                cldice = 2 * tprec * trec / (tprec + trec)
+                val_cldice_sum += cldice.mean().item()
+
+                n_val_batches += 1
+
+        val_loss = val_loss_sum / n_val_batches
+        val_dice = val_dice_sum / n_val_batches
+        val_cldice = val_cldice_sum / n_val_batches
+        val_score = (val_dice + val_cldice) / 2
+
+        current_lr = optimizer.param_groups[0]["lr"]
+        history["epoch"].append(epoch + 1)
+        history["train_loss"].append(train_loss)
+        history["val_loss"].append(val_loss)
+        history["val_dice"].append(val_dice)
+        history["val_cldice"].append(val_cldice)
+        history["val_score"].append(val_score)
+        history["lr"].append(current_lr)
+
+        scheduler.step()
+
+        logging.info(
+            f"Epoch {epoch+1:3d} | "
+            f"train_loss={train_loss:.4f} | val_loss={val_loss:.4f} | "
+            f"val_dice={val_dice:.4f} | val_cldice={val_cldice:.4f} | "
+            f"val_score={val_score:.4f} | lr={current_lr:.2e}"
+        )
+
+        is_best = val_score > best_val_score
+        if is_best:
+            best_val_score = val_score
+            torch.save(
+                {
+                    "epoch": epoch + 1,
+                    "model_state": model.state_dict(),
+                    "optimizer_state": optimizer.state_dict(),
+                    "val_loss": val_loss,
+                    "val_dice": val_dice,
+                    "val_cldice": val_cldice,
+                    "val_score": val_score,
+                },
+                checkpoint_path,
+            )
+            logging.info(f"  -> new best (val_score={val_score:.4f}); saved checkpoint")
+
+        save_epoch_dashboard(
+            history=history,
+            epoch=epoch + 1,
+            preview_batch=preview_batch,
+            out_dir=IMG_DIR,
+            is_best=is_best,
+        )
+        save_fixed_location_images(
+            model=model,
+            norm_stats=norm_stats,
+            fixed_locations=fixed_locations,
+            epoch=epoch + 1,
+            out_dir=IMG_DIR,
+        )
+
+    pd.DataFrame(history).to_csv(OUTPUT_DIR / "training_history.csv", index=False)
+    return history, checkpoint_path
+
+
+# ============================================================
 # EVALUATION  (val-only sanity check; held-out basin is done separately)
 # ============================================================
 
 
-def evaluate_split(model, df_split, split_name, norm_stats, patches_root_dirs):
+def evaluate_split(model, df_split, split_name, norm_stats):
     """
     Evaluate model on a split, save per-patch predictions, return metrics df.
     Per-patch metrics: dice, iou, cldice, tp/fp/fn/tn, precision, recall, f1.
@@ -1100,7 +805,7 @@ def evaluate_split(model, df_split, split_name, norm_stats, patches_root_dirs):
     if SAVE_PREDICTIONS:
         pred_dir.mkdir(exist_ok=True)
 
-    ds = LeveeDataset(df_split, patches_root_dirs, INPUT_CHANNELS, norm_stats, augment=False)
+    ds = make_dataset(df_split, norm_stats, augment=False)
     loader = DataLoader(
         ds,
         batch_size=BATCH_SIZE,
@@ -1137,8 +842,8 @@ def evaluate_split(model, df_split, split_name, norm_stats, patches_root_dirs):
                 iou = tp / (tp + fp + fn + 1e-6)
                 dice = 2 * tp / (2 * tp + fp + fn + 1e-6)
 
-                skel_p = soft_skeleton(p, CLDICE_ITER)
-                skel_l = soft_skeleton(l, CLDICE_ITER)
+                skel_p = models.soft_skeleton(p, CLDICE_ITER)
+                skel_l = models.soft_skeleton(l, CLDICE_ITER)
                 tprec = ((skel_p * l).sum() + 1e-6) / (skel_p.sum() + 1e-6)
                 trec = ((p * skel_l).sum() + 1e-6) / (skel_l.sum() + 1e-6)
                 cldice = (2 * tprec * trec / (tprec + trec)).item()
@@ -1177,12 +882,12 @@ def evaluate_split(model, df_split, split_name, norm_stats, patches_root_dirs):
 
 
 def report_metrics(df_results, split_name):
-    """Log per-category/patch_type breakdown plus overall mean and micro-averaged metrics."""
+    """Log per-category/patch_type breakdown plus overall mean and micro metrics."""
     logging.info("=" * 70)
     logging.info(f"{split_name.upper()} SET METRICS")
     logging.info("=" * 70)
 
-    # Negatives carry no category; show them as their own group instead of dropping.
+    # Negatives carry no category; show them as their own group
     df_results = df_results.copy()
     df_results["category"] = df_results["category"].fillna(df_results["patch_type"])
 
@@ -1263,27 +968,27 @@ def main():
     norm_stats = compute_or_load_norm_stats(df_train)
 
     # 3. Build dataloaders
-    train_loader, val_loader, patches_root_dirs = build_dataloaders(
-        df_train, df_val, norm_stats
-    )
+    train_loader, val_loader = build_dataloaders(df_train, df_val, norm_stats)
 
     # 3b. Fixed monitoring locations (always positive): 3 train + 3 val
-    fixed_locations = build_fixed_locations(df_train, df_val, patches_root_dirs)
+    fixed_locations = build_fixed_locations(df_train, df_val)
     for loc in fixed_locations:
         log.info(f"Fixed location: {loc['name']} -> patch_id={loc['patch_id']} ({loc['split']})")
 
     # 4. Build model
-    model = build_model()
+    model = models.build_model(
+        ARCHITECTURE,
+        BACKBONES[ARCHITECTURE],
+        ENCODER_WEIGHTS,
+        N_INPUT_CHANNELS,
+        DECODER_DROPOUT_P,
+        DEVICE,
+    )
 
     # 5. Train
     log.info("Starting training...")
     history, checkpoint_path = train(
-        model,
-        train_loader,
-        val_loader,
-        norm_stats,
-        fixed_locations,
-        patches_root_dirs,
+        model, train_loader, val_loader, norm_stats, fixed_locations
     )
 
     # 6. Plot curves
@@ -1302,7 +1007,7 @@ def main():
         f"val_cldice={checkpoint.get('val_cldice', float('nan')):.4f}"
     )
 
-    val_results = evaluate_split(model, df_val, "val", norm_stats, patches_root_dirs)
+    val_results = evaluate_split(model, df_val, "val", norm_stats)
     val_results.to_csv(OUTPUT_DIR / "val_results_per_patch.csv", index=False)
     report_metrics(val_results, "val")
 
@@ -1310,7 +1015,7 @@ def main():
         n_val = len(list((OUTPUT_DIR / "predictions_val").glob("*.npz")))
         log.info(f"Saved predictions: val={n_val} files")
 
-    log.info("Done. Held-out basin is evaluated separately with evaluate_segformer.py.")
+    log.info("Done. Held-out basin is evaluated separately.")
 
 
 if __name__ == "__main__":
